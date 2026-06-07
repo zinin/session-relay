@@ -3,14 +3,21 @@
 #
 # Reads exact context usage from session transcript (usage.input_tokens +
 # usage.cache_creation_input_tokens + usage.cache_read_input_tokens) and
-# emits a compact additionalContext system reminder to the model:
+# emits a compact additionalContext system reminder to the model.
+#
+# SESSION-SCOPED: active only for the session in which /do-plan was started (and
+# for the rest of that session, even after /do-plan finishes). /do-plan writes a
+# per-session config do-plan-config-<cwd>-<session>.json; the hook emits only if
+# the file named for ITS session exists. Any other session — including an ordinary
+# one in the same cwd after a past /do-plan — gets no model-visible output (the
+# hook still runs its cheap mkdir preamble, then exits at the gate).
 #
 #   - At every INTERVAL_K mark (default 25k) starting from START_K (default 150k):
 #       "ctx:175k"
 #
-#   - When session context first crosses the per-cwd STOP threshold
+#   - When session context first crosses the per-session STOP threshold
 #     (written by the /do-plan slash command into
-#      ${CLAUDE_PLUGIN_DATA}/state/do-plan-config-<cwd-encoded>.json):
+#      ${CLAUDE_PLUGIN_DATA}/state/do-plan-config-<cwd-encoded>-<session>.json):
 #       "ctx:255k STOP threshold=250k - invoke /claude-mesh:pause-after-current-task"
 #
 # Silent at every other invocation (no context pollution).
@@ -55,7 +62,7 @@ fi
 START_K="${CC_CONTEXT_START_K:-150}"        # first milestone (in thousands)
 INTERVAL_K="${CC_CONTEXT_INTERVAL_K:-25}"   # milestone spacing (in thousands)
 
-# ---- Per-cwd STOP threshold (set by /do-plan) ----
+# ---- Encode cwd + resolve state dir ----
 if [ -n "$CWD" ]; then
     CWD_ENC="$(printf '%s' "$CWD" | sed 's|/|-|g')"
 else
@@ -65,12 +72,24 @@ fi
 STATE_DIR="${CLAUDE_PLUGIN_DATA:-$HOME/.claude/plugins/data/claude-mesh-zinin}/state"
 mkdir -p "$STATE_DIR"
 
-CONFIG_FILE="$STATE_DIR/do-plan-config-${CWD_ENC}.json"
-# Default: 999_999_999 = effectively no STOP threshold if /do-plan not invoked
-STOP_THRESHOLD="$(jq -r '.stop_threshold // 999999999' "$CONFIG_FILE" 2>/dev/null || echo "999999999")"
-
 # ---- Per-session state (keyed off transcript filename, NOT cwd) ----
 SESSION_KEY="$(basename "$TRANSCRIPT_PATH" .jsonl)"
+
+# ---- Gate: emit ONLY inside the session where /do-plan was started ----
+# /do-plan writes a PER-SESSION config do-plan-config-<cwd>-<session>.json (see
+# commands/do-plan.md Step 2). No file for THIS session → /do-plan never ran here
+# → exit silently (no milestone, no STOP). Keying the config by session (not just
+# cwd) means two concurrent /do-plan runs in one cwd never clobber each other; old
+# per-cwd configs (different filename) are simply ignored. "Silent" = no
+# additionalContext; the mkdir preamble above still runs.
+CONFIG_FILE="$STATE_DIR/do-plan-config-${CWD_ENC}-${SESSION_KEY}.json"
+[ -f "$CONFIG_FILE" ] || exit 0
+
+# stop_threshold from THIS session's config. Default 999_999_999 = no STOP
+# (defense in depth; /do-plan always writes it). The `|| echo` keeps the hook
+# alive under `set -euo pipefail` if the file is somehow malformed.
+STOP_THRESHOLD="$(jq -r '.stop_threshold // 999999999' "$CONFIG_FILE" 2>/dev/null || echo "999999999")"
+
 STATE_MILESTONE="$STATE_DIR/context-milestone-${SESSION_KEY}.txt"
 STATE_STOP="$STATE_DIR/context-stop-${SESSION_KEY}.txt"
 

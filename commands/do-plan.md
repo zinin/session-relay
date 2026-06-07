@@ -63,9 +63,9 @@ This floor applies to both an explicit `$ARGUMENTS` value and the config-driven 
 
 Do not invoke any skill, do not write the config file, do not start execution.
 
-## Step 2 — Write per-cwd config file
+## Step 2 — Write per-session config file
 
-The hook reads `<plugin-data>/state/do-plan-config-<cwd-encoded>.json` to know the STOP threshold, where `<plugin-data>` is the plugin's data dir (resolved by the loader) and `<cwd-encoded>` is the absolute `pwd` with every `/` replaced by `-`. The hook (`check-context-size.sh`) resolves the same data dir and computes `<cwd-encoded>` from the same `pwd` encoding, so both sides converge on one absolute path.
+The hook reads `<plugin-data>/state/do-plan-config-<cwd-encoded>-<session>.json` to know the STOP threshold, where `<plugin-data>` is the plugin's data dir (resolved by the loader), `<cwd-encoded>` is the absolute `pwd` with every `/` replaced by `-`, and `<session>` is the current session id. The hook (`check-context-size.sh`) resolves the same data dir, computes `<cwd-encoded>` from the same `pwd` encoding, and derives `<session>` from its transcript filename stem — so both sides converge on one absolute path. Per-session keying lets two concurrent `/do-plan` runs in one cwd coexist without clobbering each other's threshold.
 
 Use Bash. `${CLAUDE_PLUGIN_DATA}` is empty in slash-command Bash calls (CC 2.1.156), so self-discover the data dir via the loader (located by glob):
 
@@ -77,10 +77,39 @@ PLUGIN_DATA="$("$LOADER" data-dir)"
 [ -n "$PLUGIN_DATA" ] || { echo "/claude-mesh:do-plan: could not resolve plugin data dir" >&2; exit 1; }
 mkdir -p "$PLUGIN_DATA/state"
 CWD_ENC=$(pwd | sed 's|/|-|g')
-printf '{"stop_threshold": %d}\n' <THRESHOLD> > "$PLUGIN_DATA/state/do-plan-config-${CWD_ENC}.json"
+
+# Bind the hook to THIS session via a PER-SESSION config file
+# do-plan-config-<cwd>-<session>.json. check-context-size.sh reads the file named
+# for its own session (SESSION_KEY="$(basename "$TRANSCRIPT_PATH" .jsonl)"), so the
+# id below must be byte-equal to that stem. Per-session keying means two concurrent
+# /do-plan runs in one cwd never clobber each other.
+#
+# No transcript-dir glob fallback (iter-1 review ISSUE-1/2): ~/.claude/projects/
+# dir names encode '.'/'_'->'-' too (not just '/'), so a sed 's|/|-|g' glob misses
+# on many real paths; and `ls -t | head -1` can pick another session's transcript
+# under concurrency. No glob can identify "this" session, so fail loudly instead.
+# Task 4 verifies CLAUDE_CODE_SESSION_ID is populated in slash-command Bash.
+SID="${CLAUDE_CODE_SESSION_ID:-}"
+[ -n "$SID" ] || { echo "/claude-mesh:do-plan: CLAUDE_CODE_SESSION_ID is empty — cannot bind the context hook to this session. Aborting (see Task 4)." >&2; exit 1; }
+
+# Atomic write with jq (not printf): robust to a concurrent hook read seeing a
+# half-written file. Session is in the filename, so the body is just the threshold.
+CONFIG_PATH="$PLUGIN_DATA/state/do-plan-config-${CWD_ENC}-${SID}.json"
+CONFIG_TMP="$(mktemp "$PLUGIN_DATA/state/.do-plan-config-${CWD_ENC}-${SID}.XXXXXX")" \
+    || { echo "/claude-mesh:do-plan: mktemp failed for config" >&2; exit 1; }
+jq -nc --argjson thr <THRESHOLD> '{stop_threshold:$thr}' > "$CONFIG_TMP" \
+    && mv -f "$CONFIG_TMP" "$CONFIG_PATH"
 ```
 
 Substitute `<THRESHOLD>` with the integer resolved in Step 1.
+
+The per-session filename (`do-plan-config-<cwd>-<session>.json`) binds the hook to
+this session: the hook reads the file named for its own session, so an ordinary
+session in the same cwd (or a stale file from a past `/do-plan`) is never seen and
+gets no milestone/STOP reminders. Two concurrent `/do-plan` runs in one cwd each
+own their own file and don't clobber each other. On
+`/claude-mesh:continue-plan-fresh-session`, the new session re-runs `/do-plan`,
+which writes a file for the new session id.
 
 ## Step 3 — Confirm in one short line
 
@@ -119,7 +148,11 @@ These apply throughout execution and override any cost-cutting guidance the skil
 
 ## Step 6 — React to hook signals
 
-The `PostToolUse` hook will inject system reminders of two kinds:
+The `PostToolUse` hook will inject system reminders of two kinds. These appear
+**only** in the session where you started `/do-plan` (the hook is gated on the
+per-session config file written in Step 2) — and for the rest of that session, even
+after `/do-plan` finishes; in any other session (including an ordinary one in the
+same cwd) it stays silent.
 
 ### Milestone (informational)
 
@@ -156,7 +189,7 @@ If the plan reaches completion before STOP fires, follow `superpowers:subagent-d
 ## Argument examples
 
 - `/claude-mesh:do-plan` — threshold = `runtime.do_plan_default_stop_tokens` from config.yaml (default 250 000)
-- `/claude-mesh:do-plan 300k` — threshold 300 000 (one-shot override; written to per-cwd state)
+- `/claude-mesh:do-plan 300k` — threshold 300 000 (one-shot override; written to per-session state)
 - `/claude-mesh:do-plan 400000` — threshold 400 000 (override)
 - `/claude-mesh:do-plan 1m` — **reject**, format unsupported (be strict)
 
