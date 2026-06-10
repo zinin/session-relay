@@ -116,7 +116,7 @@ which writes a file for the new session id.
 Output a single status line so the user knows the threshold took effect, e.g.:
 
 ```
-/claude-mesh:do-plan: STOP threshold = 250000 tokens. Opus everywhere, full review rigor. Starting subagent-driven-development.
+/claude-mesh:do-plan: STOP threshold = 250000 tokens. Fable everywhere, full review rigor. Starting subagent-driven-development.
 ```
 
 No long preamble.
@@ -129,9 +129,9 @@ Use the `Skill` tool with `skill = "superpowers:subagent-driven-development"`. T
 
 These apply throughout execution and override any cost-cutting guidance the skill might imply:
 
-### Model: Opus everywhere
+### Model: Fable everywhere
 
-- Every `Agent` dispatch (implementer, spec reviewer, code quality reviewer, parallel work, any subagent) **must explicitly set `model: "opus"`**. Do not pick `sonnet` / `haiku` for "cheap" or "simple" subtasks.
+- Every `Agent` dispatch (implementer, spec reviewer, code quality reviewer, parallel work, any subagent) **must explicitly set `model: "fable"`**. Do not pick `opus` / `sonnet` / `haiku` for "cheap" or "simple" subtasks.
 - Same for external reviewers (`superpowers:requesting-code-review` and friends) where a model parameter is accepted.
 - If a subagent type does not accept a model override, accept the default — but do not deliberately route work to cheaper agents.
 
