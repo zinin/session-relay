@@ -32,6 +32,16 @@ case "$?" in
     2) DEFAULT_STOP=250000 ;;      # config.yaml not found (fresh install) — sensible default
     *) cat "$LOADER_ERR" >&2; exit 1 ;;  # any other loader failure — fast-fail per §10
 esac
+
+# Dispatch model for subagents. Empty = inherit the session model.
+# rc=2 (no config.yaml on a fresh install) also means inherit.
+DISPATCH_MODEL=$("$LOADER" get-flag dispatch_model 2>"$LOADER_ERR")
+case "$?" in
+    0) ;;                      # configured value (may be empty = inherit), already validated
+    2) DISPATCH_MODEL="" ;;    # config.yaml not found — inherit session model
+    *) cat "$LOADER_ERR" >&2; exit 1 ;;  # any other loader failure — fast-fail
+esac
+echo "DISPATCH_MODEL=$DISPATCH_MODEL"   # surface to the controller (empty = inherit session)
 ```
 
 The `2)` arm tolerates exactly one case — config.yaml missing on a fresh install (the distinct rc=2 from `load_or_die`). Any other failure (yaml malformed, env binary missing, validator die for an out-of-range / non-integer `do_plan_default_stop_tokens`) propagates the loader's stderr and exits. Do NOT regress this to `|| echo 250000`: swallowing all loader errors masks real config problems and contradicts the fast-fail contract.
@@ -116,8 +126,10 @@ which writes a file for the new session id.
 Output a single status line so the user knows the threshold took effect, e.g.:
 
 ```
-/claude-mesh:do-plan: STOP threshold = 250000 tokens. Fable everywhere, full review rigor. Starting subagent-driven-development.
+/claude-mesh:do-plan: STOP threshold = 250000 tokens. Dispatch model = <DISPATCH_MODEL>, full review rigor. Starting subagent-driven-development.
 ```
+
+Substitute the resolved model: print `Dispatch model = <DISPATCH_MODEL>` when it is non-empty, or `Dispatch model = session-inherited` when `DISPATCH_MODEL` is empty.
 
 No long preamble.
 
@@ -129,10 +141,12 @@ Use the `Skill` tool with `skill = "superpowers:subagent-driven-development"`. T
 
 These apply throughout execution and override any cost-cutting guidance the skill might imply:
 
-### Model: Fable everywhere
+### Model: dispatch tier
 
-- Every `Agent` dispatch (implementer, spec reviewer, code quality reviewer, parallel work, any subagent) **must explicitly set `model: "fable"`**. Do not pick `opus` / `sonnet` / `haiku` for "cheap" or "simple" subtasks.
-- Same for external reviewers (`superpowers:requesting-code-review` and friends) where a model parameter is accepted.
+- The dispatch model is `$DISPATCH_MODEL`, resolved in Step 1 from config `runtime.dispatch_model`.
+  - **Non-empty** → every `Agent` dispatch (implementer, spec reviewer, code quality reviewer, parallel work, any subagent) **must explicitly set `model: "<DISPATCH_MODEL>"`**.
+  - **Empty** (no config value, or no config.yaml) → **omit `model:`** so each subagent **inherits this session's model**. Never explicitly pass a model *cheaper* than the session to economize on a "simple" subtask.
+- The same dispatch-model rule applies to external reviewers (`superpowers:requesting-code-review` and friends) where a model parameter is accepted — set `model: "<DISPATCH_MODEL>"` when non-empty, otherwise omit it.
 - If a subagent type does not accept a model override, accept the default — but do not deliberately route work to cheaper agents.
 
 ### Do not economize tokens
