@@ -16,12 +16,16 @@ When the threshold is crossed, the `PostToolUse` hook `check-context-size.sh` in
 
 ### Resolve the config-driven default
 
-When `$ARGUMENTS` is empty, the STOP threshold comes from `runtime.do_plan_default_stop_tokens` in config.yaml (tunable per Task 7). Resolve it via the shared loader. `${CLAUDE_PLUGIN_ROOT}` is empty in slash-command Bash calls (CC 2.1.156), so locate the loader by glob:
+When `$ARGUMENTS` is empty, the STOP threshold comes from `runtime.do_plan_default_stop_tokens` in config.yaml (tunable per Task 7). Resolve it via the shared loader, located through the placeholder the harness substitutes into this command's text (empty as a shell variable, hence the version-sorted glob as fallback):
 
 ```bash
-# Task 2.5: ${CLAUDE_PLUGIN_ROOT} is empty in slash-command Bash calls — locate via glob.
-LOADER="$(find "$HOME"/.claude/plugins -path '*claude-mesh*/skills/shared/config-loader.sh' 2>/dev/null | head -1)"
-[ -n "$LOADER" ] || { echo "/claude-mesh:do-plan: config-loader.sh not found (is claude-mesh installed?)" >&2; exit 1; }
+# Task 2.5: CLAUDE_PLUGIN_ROOT is empty as a shell VARIABLE, but the harness substitutes the
+# placeholder into this command's text before the call — it names the active copy (spelled
+# without braces here, or this comment would be substituted too). Fallback glob is
+# VERSION-sorted: `head -1` is directory order and can pick a stale cached version.
+LOADER="${CLAUDE_PLUGIN_ROOT}/skills/shared/config-loader.sh"
+[ -f "$LOADER" ] || LOADER="$(find "$HOME"/.claude/plugins -path '*claude-mesh*/skills/shared/config-loader.sh' 2>/dev/null | sort -V | tail -1)"
+[ -f "$LOADER" ] || { echo "/claude-mesh:do-plan: config-loader.sh not found (is claude-mesh installed?)" >&2; exit 1; }
 LOADER_ERR=$(mktemp -t do-plan-loader-XXXXXX.err) \
     || { echo "/claude-mesh:do-plan: mktemp failed" >&2; exit 1; }
 trap 'rm -f "$LOADER_ERR"' EXIT
@@ -77,12 +81,13 @@ Do not invoke any skill, do not write the config file, do not start execution.
 
 The hook reads `<plugin-data>/state/do-plan-config-<cwd-encoded>-<session>.json` to know the STOP threshold, where `<plugin-data>` is the plugin's data dir (resolved by the loader), `<cwd-encoded>` is the absolute `pwd` with every `/` replaced by `-`, and `<session>` is the current session id. The hook (`check-context-size.sh`) resolves the same data dir, computes `<cwd-encoded>` from the same `pwd` encoding, and derives `<session>` from its transcript filename stem — so both sides converge on one absolute path. Per-session keying lets two concurrent `/do-plan` runs in one cwd coexist without clobbering each other's threshold.
 
-Use Bash. `${CLAUDE_PLUGIN_DATA}` is empty in slash-command Bash calls (CC 2.1.156), so self-discover the data dir via the loader (located by glob):
+Use Bash. `CLAUDE_PLUGIN_DATA` is empty as a shell variable in slash-command Bash calls (CC 2.1.156), so self-discover the data dir via the loader:
 
 ```bash
-# Task 2.5: ${CLAUDE_PLUGIN_DATA} is empty in slash-command Bash calls — locate loader via glob, ask it for the data dir.
-LOADER="$(find "$HOME"/.claude/plugins -path '*claude-mesh*/skills/shared/config-loader.sh' 2>/dev/null | head -1)"
-[ -n "$LOADER" ] || { echo "/claude-mesh:do-plan: config-loader.sh not found (is claude-mesh installed?)" >&2; exit 1; }
+# Task 2.5: CLAUDE_PLUGIN_DATA is empty as a shell variable — ask the loader for the data dir.
+LOADER="${CLAUDE_PLUGIN_ROOT}/skills/shared/config-loader.sh"
+[ -f "$LOADER" ] || LOADER="$(find "$HOME"/.claude/plugins -path '*claude-mesh*/skills/shared/config-loader.sh' 2>/dev/null | sort -V | tail -1)"
+[ -f "$LOADER" ] || { echo "/claude-mesh:do-plan: config-loader.sh not found (is claude-mesh installed?)" >&2; exit 1; }
 PLUGIN_DATA="$("$LOADER" data-dir)"
 [ -n "$PLUGIN_DATA" ] || { echo "/claude-mesh:do-plan: could not resolve plugin data dir" >&2; exit 1; }
 mkdir -p "$PLUGIN_DATA/state"
