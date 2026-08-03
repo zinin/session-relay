@@ -203,7 +203,23 @@ The STOP signal fires exactly once per session. If it has already fired and you 
 
 ## Step 7 — End of plan
 
-If the plan reaches completion before STOP fires, follow `superpowers:subagent-driven-development` normally — final full-implementation review, `superpowers:finishing-a-development-branch`, and so on. No special handling needed.
+If the plan reaches completion before STOP fires, follow `superpowers:subagent-driven-development` normally — final full-implementation review, `superpowers:finishing-a-development-branch`, and so on — with two additions when the work will be reviewed elsewhere.
+
+Offer the code review BEFORE `superpowers:finishing-a-development-branch`, and if the user
+takes it, hold finishing entirely — no push, no PR, and no local merge either (finishing
+deletes the branch after merging, and review fixes need somewhere to land) — until that
+external review has run and its findings are applied. The order is the point: a
+merged-and-deleted branch cannot absorb what the review finds.
+
+`/claude-mesh:code-review-fresh-session` generates the prompt, carrying the git range and what
+only this session knows — deviations from the plan, what was left unfinished, known weak spots.
+
+Whether this session can finish the branch is a fact to check, not to guess: run
+`GIT_TERMINAL_PROMPT=0 timeout 8 git ls-remote --exit-code origin HEAD` (or reuse a preflight
+verdict already printed in this session). If the remote does not answer, say plainly that
+`superpowers:finishing-a-development-branch` cannot finish the job here: push and PR creation
+need a network that is not available. Leave the branch for the user to finish outside. Do not
+attempt the push to find out.
 
 ## Argument examples
 
