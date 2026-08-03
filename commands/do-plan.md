@@ -203,7 +203,7 @@ The STOP signal fires exactly once per session. If it has already fired and you 
 
 ## Step 7 — End of plan
 
-If the plan reaches completion before STOP fires, follow `superpowers:subagent-driven-development` normally — final full-implementation review, `superpowers:finishing-a-development-branch`, and so on — with two additions when the work will be reviewed elsewhere.
+If the plan reaches completion before STOP fires, follow `superpowers:subagent-driven-development` normally — final full-implementation review, `superpowers:finishing-a-development-branch`, and so on — with two additions below.
 
 Offer the code review BEFORE `superpowers:finishing-a-development-branch`, and if the user
 takes it, hold finishing entirely — no push, no PR, and no local merge either (finishing
