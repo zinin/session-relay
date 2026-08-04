@@ -203,7 +203,29 @@ The STOP signal fires exactly once per session. If it has already fired and you 
 
 ## Step 7 — End of plan
 
-If the plan reaches completion before STOP fires, follow `superpowers:subagent-driven-development` normally — final full-implementation review, `superpowers:finishing-a-development-branch`, and so on. No special handling needed.
+If the plan reaches completion before STOP fires, follow `superpowers:subagent-driven-development` normally — final full-implementation review, `superpowers:finishing-a-development-branch`, and so on — with two additions below.
+
+Offer the code review BEFORE `superpowers:finishing-a-development-branch`, and if the user
+takes it, hold finishing entirely — no push, no PR, and no local merge either (finishing
+deletes the branch after merging, and review fixes need somewhere to land) — until that
+external review has run and its findings are applied. The order is the point: a
+merged-and-deleted branch cannot absorb what the review finds.
+
+`/claude-mesh:code-review-fresh-session` generates the prompt, carrying the git range and what
+only this session knows — deviations from the plan, what was left unfinished, known weak spots.
+
+Whether this session can finish the branch is a fact to check, not to guess: run
+`GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND='ssh -oBatchMode=yes' timeout 8 git ls-remote --exit-code origin HEAD`
+(or reuse a preflight verdict already printed in this session). Both guards earn their place:
+without `BatchMode` a passphrase-protected key stops at a prompt and burns the whole budget
+into a false "no network", and if `command -v timeout` finds nothing — stock macOS, where it is
+not installed — the line exits 127, which is indistinguishable from a silent remote. Check for
+`timeout` first and, when it is absent, say the reachability is unknown rather than reporting a
+verdict; `skills/shared/preflight-env.sh` has a dedicated branch for exactly this, and calls
+such a verdict "invented out of a missing binary". If the remote does not answer, say plainly that
+`superpowers:finishing-a-development-branch` cannot finish the job here: push and PR creation
+need a network that is not available. Leave the branch for the user to finish outside. Do not
+attempt the push to find out.
 
 ## Argument examples
 
