@@ -131,11 +131,12 @@ Read these files first to understand the context:
 
 ### 4. Save and Report the Path
 
-1. **Determine filename:**
-   - If in a project with docs/: `docs/session-transfer-YYYY-MM-DD-HHMMSS.md`
-   - Otherwise: `/tmp/claude-session-transfer-YYYY-MM-DD-HHMMSS.md`
+1. **Filename:** `docs/session-transfer-YYYY-MM-DD-HHMMSS.md` — always under the project's
+   `docs/`, like every other prompt generator in this plugin; create the directory if it does
+   not exist. Never `/tmp`: the fresh session has to find the file by a path relative to the
+   project.
 
-2. **Write to file:** Save the generated prompt
+2. **Write to file:** Save the generated prompt. Do not commit it.
 
 3. **Report the path — do NOT print the prompt.** The prompt lives in the file; echoing it
    into the chat only spends tokens. No clipboard either. Print exactly this and nothing more:
@@ -147,8 +148,7 @@ Read these files first to understand the context:
    Open a fresh Claude Code session and hand it this file.
    ```
 
-   `absolute` is `realpath <file>`. When the file went to `/tmp` (no `docs/`), it lies outside
-   the project — print the `absolute` line only.
+   `absolute` is `realpath <file>`.
 
 ## Tips for Good Transfers
 
