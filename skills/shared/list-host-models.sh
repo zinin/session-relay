@@ -32,4 +32,20 @@ esac
 if [ -n "$FILE" ]; then
     exec <"$FILE" || exit 64
 fi
-sed -n '/^[[:space:]]*Available models:/,$ s/^[[:space:]]*[-*][[:space:]]\{1,\}\([A-Za-z0-9][A-Za-z0-9._-]*\).*/\1/p'
+# The list ENDS at the first line after the header that is not a bullet — a blank line, a
+# `Notes:` header, prose. The range used to run to end-of-file, so any bulleted section printed
+# after the list (`Notes:` / `  - see docs`) became slugs `see`, `docs`… — the same bogus-reviewer
+# hole the header anchor closes on the way in, left open on the way out. The captured listing
+# is contiguous (test-list-host-models.sh pins the count), so stopping at the first non-bullet
+# line loses nothing.
+awk '
+    /^[[:space:]]*Available models:/ { in_list = 1; next }
+    in_list {
+        if (match($0, /^[[:space:]]*[-*][[:space:]]+[A-Za-z0-9][A-Za-z0-9._-]*/)) {
+            s = substr($0, RSTART, RLENGTH)
+            sub(/^[[:space:]]*[-*][[:space:]]+/, "", s)
+            print s
+        } else {
+            exit
+        }
+    }'

@@ -27,6 +27,12 @@ GOT=$(printf 'Error: not logged in\n  - run `grok login`\n' | "$SCRIPT")
 assert_eq "an error message yields no slugs" "" "$GOT"
 GOT=$(printf 'Notes:\n  * upgrade available\n  - see docs\n' | "$SCRIPT")
 assert_eq "a Notes section yields no slugs" "" "$GOT"
+# …and a bulleted section printed AFTER the list must not extend it: the list ends at the first
+# non-bullet line (reproduced 2026-09-02 — `Notes:` bullets came back as slugs `see`, `contact`).
+GOT=$(printf 'Available models:\n  * grok-4.6 (default)\n  - glm-5-3\n\nNotes:\n  - see docs\n  - contact foo/bar\n' | "$SCRIPT" | tr '\n' ' ')
+assert_eq "bullets after the list are not slugs" "grok-4.6 glm-5-3 " "$GOT"
+GOT=$(printf 'Available models:\n  * grok-4.6 (default)\nNotes:\n  - see docs\n' | "$SCRIPT" | tr '\n' ' ')
+assert_eq "a header line right after the list ends it" "grok-4.6 " "$GOT"
 
 # Output with no recognised header yields nothing rather than guessing: an empty HOST_MODELS is
 # exactly the input native_degraded is written for, and that path says so out loud.
