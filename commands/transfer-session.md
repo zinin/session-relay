@@ -129,7 +129,7 @@ Read these files first to understand the context:
 - List questions answered and remaining
 - Note promising directions
 
-### 4. Save and Output
+### 4. Save and Report the Path
 
 1. **Determine filename:**
    - If in a project with docs/: `docs/session-transfer-YYYY-MM-DD-HHMMSS.md`
@@ -137,15 +137,18 @@ Read these files first to understand the context:
 
 2. **Write to file:** Save the generated prompt
 
-3. **Display:** Show the full prompt content on screen
+3. **Report the path — do NOT print the prompt.** The prompt lives in the file; echoing it
+   into the chat only spends tokens. No clipboard either. Print exactly this and nothing more:
 
-4. **Copy to clipboard:**
-   - Linux: `cat <file> | xclip -selection clipboard`
-   - macOS: `cat <file> | pbcopy`
-   - Detect OS automatically
-   - **Note:** If xclip/xsel is not installed on Linux, suggest: `sudo apt install xclip`
+   ```
+   Prompt saved: session transfer — <one line: what the work is about>
+     relative: docs/session-transfer-YYYY-MM-DD-HHMMSS.md
+     absolute: <realpath of that file>
+   Open a fresh Claude Code session and hand it this file.
+   ```
 
-5. **Notify:** "Prompt ready. Open a new Claude Code session and paste from clipboard (Ctrl+V / Cmd+V)"
+   `absolute` is `realpath <file>`. When the file went to `/tmp` (no `docs/`), it lies outside
+   the project — print the `absolute` line only.
 
 ## Tips for Good Transfers
 

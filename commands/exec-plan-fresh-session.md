@@ -86,16 +86,16 @@ Do NOT silently work around plan issues or make significant deviations without u
 
 ```
 
-### 4. Save and Output
+### 4. Save and Report the Path
 
 1. **Write to file:** Save prompt to `docs/superpowers/plans/YYYY-MM-DD-<topic>-execution-prompt.md` (same date and topic as plan)
 
-2. **Display:** Show the full prompt content on screen
+2. **Report the path — do NOT print the prompt.** The prompt lives in the file; echoing it
+   into the chat only spends tokens. No clipboard either. Print exactly this and nothing more:
 
-3. **Copy to clipboard:**
-   - Linux: `cat <file> | xclip -selection clipboard` or `xsel --clipboard`
-   - macOS: `cat <file> | pbcopy`
-   - Detect OS automatically
-   - **Note:** If xclip/xsel is not installed on Linux, suggest: `sudo apt install xclip` or `sudo apt install xsel`
-
-4. **Notify:** "Prompt ready. Open a new Claude Code session and paste from clipboard (Ctrl+V / Cmd+V)"
+   ```
+   Prompt saved: execution prompt for <feature name>
+     relative: docs/superpowers/plans/YYYY-MM-DD-<topic>-execution-prompt.md
+     absolute: <realpath of that file>
+   Open a fresh Claude Code session and hand it this file.
+   ```
