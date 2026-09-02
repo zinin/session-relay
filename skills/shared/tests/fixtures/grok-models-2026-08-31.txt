@@ -1,0 +1,25 @@
+You are logged in with grok.com.
+
+Default model: grok-4.6
+
+Available models:
+  * grok-4.6 (default)
+  - grok-4.5
+  - dks-ultra
+  - deepseek-v4-flash
+  - dks-vision
+  - glm-5-3-flash
+  - minimax-m3
+  - lanit-auto
+  - kimi-k3
+  - minimax-m3-ollama
+  - deepseek-v4-flash-ollama
+  - deepseek-v4-pro-ollama
+  - glm-5-3
+  - glm-5-3-flash-zai
+  - deepseek-v4-flash-api
+  - deepseek-v4-pro
+  - deepseek-v4-flash-vision-exp
+  - codex-sol
+  - codex-terra
+  - codex-luna
