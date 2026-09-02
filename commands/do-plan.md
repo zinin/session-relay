@@ -24,7 +24,7 @@ When `$ARGUMENTS` is empty, the STOP threshold comes from `runtime.do_plan_defau
 # without braces here, or this comment would be substituted too). Fallback glob is
 # VERSION-sorted: `head -1` is directory order and can pick a stale cached version.
 LOADER="${CLAUDE_PLUGIN_ROOT}/skills/shared/config-loader.sh"
-[ -f "$LOADER" ] || LOADER="$(find "$HOME"/.grok/installed-plugins -path '*claude-mesh*/skills/shared/config-loader.sh' 2>/dev/null | sort -V | tail -1)"
+[ -f "$LOADER" ] || [ -z "${GROK_SESSION_ID:-}" ] || LOADER="$(find "$HOME"/.grok/installed-plugins -path '*claude-mesh*/skills/shared/config-loader.sh' 2>/dev/null | sort -V | tail -1)"
 [ -f "$LOADER" ] || LOADER="$(find "$HOME"/.claude/plugins -path '*claude-mesh*/skills/shared/config-loader.sh' 2>/dev/null | sort -V | tail -1)"
 [ -f "$LOADER" ] || LOADER="$(find "$HOME"/.grok/plugins -path '*claude-mesh*/skills/shared/config-loader.sh' 2>/dev/null | sort -V | tail -1)"
 [ -f "$LOADER" ] || { echo "/claude-mesh:do-plan: config-loader.sh not found (is claude-mesh installed?)" >&2; exit 1; }
@@ -88,7 +88,7 @@ Use Bash. `CLAUDE_PLUGIN_DATA` is empty as a shell variable in slash-command Bas
 ```bash
 # Task 2.5: CLAUDE_PLUGIN_DATA is empty as a shell variable — ask the loader for the data dir.
 LOADER="${CLAUDE_PLUGIN_ROOT}/skills/shared/config-loader.sh"
-[ -f "$LOADER" ] || LOADER="$(find "$HOME"/.grok/installed-plugins -path '*claude-mesh*/skills/shared/config-loader.sh' 2>/dev/null | sort -V | tail -1)"
+[ -f "$LOADER" ] || [ -z "${GROK_SESSION_ID:-}" ] || LOADER="$(find "$HOME"/.grok/installed-plugins -path '*claude-mesh*/skills/shared/config-loader.sh' 2>/dev/null | sort -V | tail -1)"
 [ -f "$LOADER" ] || LOADER="$(find "$HOME"/.claude/plugins -path '*claude-mesh*/skills/shared/config-loader.sh' 2>/dev/null | sort -V | tail -1)"
 [ -f "$LOADER" ] || LOADER="$(find "$HOME"/.grok/plugins -path '*claude-mesh*/skills/shared/config-loader.sh' 2>/dev/null | sort -V | tail -1)"
 [ -f "$LOADER" ] || { echo "/claude-mesh:do-plan: config-loader.sh not found (is claude-mesh installed?)" >&2; exit 1; }
