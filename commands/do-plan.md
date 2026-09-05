@@ -10,7 +10,12 @@ Run the currently loaded implementation plan via `superpowers:subagent-driven-de
 - All tasks are complete, **OR**
 - Session context size crosses the configured STOP threshold (default = `runtime.do_plan_default_stop_tokens` from config.yaml, 250 000 if unset).
 
-When the threshold is crossed, the `PostToolUse` hook `check-context-size.sh` injects a `STOP` reminder into the model context. The controller (you) must then drive the current task to a clean checkpoint via `/claude-mesh:pause-after-current-task` and yield to the user. The user will manually invoke `/claude-mesh:continue-plan-fresh-session`, start a fresh Claude session, and run `/claude-mesh:do-plan` again to resume.
+When the threshold is crossed, stop at a clean checkpoint via `/claude-mesh:pause-after-current-task` and yield to the user. The user will manually invoke `/claude-mesh:continue-plan-fresh-session`, start a fresh session, and run `/claude-mesh:do-plan` again to resume.
+
+How you learn that the threshold was crossed depends on the host:
+
+- **Claude Code:** the `PostToolUse` hook `check-context-size.sh` injects a `STOP` reminder into the model context. That is the primary signal. Follow Step 6.
+- **Grok:** that hook is **not the primary** STOP channel. Grok ignores `PostToolUse` stdout, and the model does not receive the status-line `/session-info` / `/context` numbers. After each task checkpoint, read `contextTokensUsed` from the session `signals.json` (path echoed as `CONTEXT_SIGNALS=` in Step 1). If it is `>=` the STOP threshold, treat that as STOP and follow Step 6. Do not wait for a hook reminder.
 
 ## Step 1 — Determine threshold
 
@@ -30,7 +35,8 @@ LOADER="${CLAUDE_PLUGIN_ROOT}/skills/shared/config-loader.sh"
 [ -f "$LOADER" ] || { echo "/claude-mesh:do-plan: config-loader.sh not found (is claude-mesh installed?)" >&2; exit 1; }
 LOADER_ERR=$(mktemp -t do-plan-loader-XXXXXX.err) \
     || { echo "/claude-mesh:do-plan: mktemp failed" >&2; exit 1; }
-trap 'rm -f "$LOADER_ERR"' EXIT
+GM=""
+trap 'rm -f "$LOADER_ERR" "$GM"' EXIT
 
 DEFAULT_STOP=$("$LOADER" get-flag do_plan_default_stop_tokens 2>"$LOADER_ERR")
 case "$?" in
@@ -47,7 +53,52 @@ case "$?" in
     2) DISPATCH_MODEL="" ;;    # config.yaml not found — inherit session model
     *) cat "$LOADER_ERR" >&2; exit 1 ;;  # any other loader failure — fast-fail
 esac
+# On Grok, pass dispatch_model only if it is a live host slug. opus is not.
+# Probe failure / empty catalog / missing timeout(1) → inherit (fail closed):
+# better than a spawn_subagent rejected for an unknown model.
+if [ -n "${GROK_SESSION_ID:-}" ] && [ -n "$DISPATCH_MODEL" ]; then
+    HOST_MODELS=""
+    if ! command -v timeout >/dev/null 2>&1; then
+        echo "ВНИМАНИЕ: timeout(1) отсутствует — grok models не запускался; runtime.dispatch_model=$DISPATCH_MODEL не проверялся, наследуем модель сессии" >&2
+        DISPATCH_MODEL=""
+    else
+        GM=$(mktemp -t do-plan-host-models-XXXXXX) \
+            || { echo "/claude-mesh:do-plan: mktemp failed for host catalog" >&2; exit 1; }
+        GMT="${GROK_MODELS_TIMEOUT:-${PREFLIGHT_CLI_TIMEOUT:-30}}"
+        case "$GMT" in
+            ''|*[!0-9]*|0) echo "ВНИМАНИЕ: GROK_MODELS_TIMEOUT='$GMT' не число — использую 30" >&2; GMT=30 ;;
+        esac
+        LIST_HM="$(dirname "$LOADER")/list-host-models.sh"
+        if [ ! -f "$LIST_HM" ]; then
+            echo "ВНИМАНИЕ: list-host-models.sh не найден — runtime.dispatch_model=$DISPATCH_MODEL не проверялся, наследуем модель сессии" >&2
+            DISPATCH_MODEL=""
+        elif timeout "$GMT" grok models >"$GM" 2>/dev/null; then
+            HOST_MODELS=$(bash "$LIST_HM" --from-file "$GM")
+        fi
+        rm -f "$GM"
+        GM=""
+        if [ -z "$DISPATCH_MODEL" ]; then
+            : # already inherit (missing list-host-models.sh)
+        elif [ -z "$HOST_MODELS" ]; then
+            echo "ВНИМАНИЕ: каталог хоста пуст или grok models не удался — runtime.dispatch_model=$DISPATCH_MODEL не передаём, наследуем модель сессии" >&2
+            DISPATCH_MODEL=""
+        elif ! printf '%s\n' "$HOST_MODELS" | grep -Fxq -- "$DISPATCH_MODEL"; then
+            echo "ВНИМАНИЕ: runtime.dispatch_model=$DISPATCH_MODEL нет в каталоге хоста — наследуем модель сессии" >&2
+            DISPATCH_MODEL=""
+        fi
+    fi
+    echo "HOST_MODELS=[$(printf '%s' "$HOST_MODELS" | tr '\n' ' ')]"
+fi
 echo "DISPATCH_MODEL=$DISPATCH_MODEL"   # surface to the controller (empty = inherit session)
+# Grok: the controller polls this file for STOP (Step 6). Same glob the hook uses.
+if [ -n "${GROK_SESSION_ID:-}" ]; then
+    grok_home="${GROK_HOME:-$HOME/.grok}"
+    CONTEXT_SIGNALS=""
+    for f in "$grok_home"/sessions/*/"$GROK_SESSION_ID"/signals.json; do
+        [ -f "$f" ] && CONTEXT_SIGNALS="$f" && break
+    done
+    echo "CONTEXT_SIGNALS=$CONTEXT_SIGNALS"
+fi
 ```
 
 The `2)` arm tolerates exactly one case — config.yaml missing on a fresh install (the distinct rc=2 from `load_or_die`). Any other failure (yaml malformed, env binary missing, validator die for an out-of-range / non-integer `do_plan_default_stop_tokens`) propagates the loader's stderr and exits. Do NOT regress this to `|| echo 250000`: swallowing all loader errors masks real config problems and contradicts the fast-fail contract.
@@ -67,7 +118,7 @@ Reject anything else with a one-line error and stop. Do not guess.
 
 ### Validate threshold >= 150 000
 
-The hook (`check-context-size.sh`) emits **nothing** below 150 000 tokens — that is a firm agreement, not a tunable. Therefore a STOP threshold below 150 000 would never fire and is rejected.
+The hook (`check-context-size.sh`) emits **nothing** below 150 000 tokens — that is a firm agreement, not a tunable. Therefore a STOP threshold below 150 000 would never fire and is rejected. On Grok the primary STOP channel is the `signals.json` poll, not the hook; the same floor still applies so one threshold cannot mean two different things across hosts.
 
 After resolving the input to an integer, check `threshold >= 150000`. If not, output exactly one line and stop:
 
@@ -81,7 +132,7 @@ Do not invoke any skill, do not write the config file, do not start execution.
 
 ## Step 2 — Write per-session config file
 
-The hook reads `<plugin-data>/state/do-plan-config-<cwd-encoded>-<session>.json` to know the STOP threshold, where `<plugin-data>` is the plugin's data dir (resolved by the loader), `<cwd-encoded>` is the absolute `pwd` with every `/` replaced by `-`, and `<session>` is the current session id. The hook (`check-context-size.sh`) computes `<cwd-encoded>` from the same `pwd` encoding and derives `<session>` from its transcript filename stem, but it takes the data dir from `$CLAUDE_PLUGIN_DATA` (set in hook contexts, `check-context-size.sh:72`) instead of asking the loader. On a marketplace install both sides land on the same absolute path; under a `--plugin-dir` dev load they do NOT — the hook gets that load's own data dir while the loader picks the one holding `config.yaml`, so this config file is written where the hook never looks and the STOP threshold silently never fires. Known divergence, fixed separately: the hook runs on every `PostToolUse`, so adding a filesystem probe there needs a cost check. Per-session keying lets two concurrent `/do-plan` runs in one cwd coexist without clobbering each other's threshold.
+The hook reads `<plugin-data>/state/do-plan-config-<cwd-encoded>-<session>.json` to know the STOP threshold, where `<plugin-data>` is the plugin's data dir (resolved by the loader), `<cwd-encoded>` is the absolute `pwd` with every `/` replaced by `-`, and `<session>` is the current session id. The hook (`check-context-size.sh`) computes `<cwd-encoded>` from the same `pwd` encoding. Session id: Claude Code uses the transcript filename stem; Grok uses `sessionId` / `$GROK_SESSION_ID` — this file's `SID` must be byte-equal to that key. The hook takes the data dir from `$CLAUDE_PLUGIN_DATA` or `$GROK_PLUGIN_DATA` (set in hook contexts) instead of asking the loader. On a marketplace install both sides land on the same absolute path; under a `--plugin-dir` dev load they do NOT — the hook gets that load's own data dir while the loader picks the one holding `config.yaml`, so this config file is written where the hook never looks and the STOP threshold silently never fires. Known divergence, fixed separately: the hook runs on every tool event, so adding a filesystem probe there needs a cost check. Per-session keying lets two concurrent `/do-plan` runs in one cwd coexist without clobbering each other's threshold.
 
 Use Bash. `CLAUDE_PLUGIN_DATA` is empty as a shell variable in slash-command Bash calls (CC 2.1.156), so self-discover the data dir via the loader:
 
@@ -98,18 +149,19 @@ mkdir -p "$PLUGIN_DATA/state"
 CWD_ENC=$(pwd | sed 's|/|-|g')
 
 # Bind the hook to THIS session via a PER-SESSION config file
-# do-plan-config-<cwd>-<session>.json. check-context-size.sh reads the file named
-# for its own session (SESSION_KEY="$(basename "$TRANSCRIPT_PATH" .jsonl)"), so the
-# id below must be byte-equal to that stem. Per-session keying means two concurrent
-# /do-plan runs in one cwd never clobber each other.
+# do-plan-config-<cwd>-<session>.json. check-context-size.sh keys the file off
+# the transcript stem when that file exists, else Grok sessionId / $GROK_SESSION_ID
+# (see the hook). SID below must be byte-equal to that key. Per-session keying
+# means two concurrent /do-plan runs in one cwd never clobber each other.
 #
 # No transcript-dir glob fallback (iter-1 review ISSUE-1/2): ~/.claude/projects/
 # dir names encode '.'/'_'->'-' too (not just '/'), so a sed 's|/|-|g' glob misses
 # on many real paths; and `ls -t | head -1` can pick another session's transcript
 # under concurrency. No glob can identify "this" session, so fail loudly instead.
-# Task 4 verifies CLAUDE_CODE_SESSION_ID is populated in slash-command Bash.
-SID="${CLAUDE_CODE_SESSION_ID:-}"
-[ -n "$SID" ] || { echo "/claude-mesh:do-plan: CLAUDE_CODE_SESSION_ID is empty — cannot bind the context hook to this session. Aborting (see Task 4)." >&2; exit 1; }
+# Claude Code slash-command Bash has CLAUDE_CODE_SESSION_ID; Grok has GROK_SESSION_ID
+# and not the Claude var. Either one is enough; both empty cannot bind the hook.
+SID="${CLAUDE_CODE_SESSION_ID:-${GROK_SESSION_ID:-}}"
+[ -n "$SID" ] || { echo "/claude-mesh:do-plan: CLAUDE_CODE_SESSION_ID and GROK_SESSION_ID are both empty — cannot bind the context hook to this session. Aborting." >&2; exit 1; }
 
 # Atomic write with jq (not printf): robust to a concurrent hook read seeing a
 # half-written file. Session is in the filename, so the body is just the threshold.
@@ -152,9 +204,10 @@ These apply throughout execution and override any cost-cutting guidance the skil
 
 ### Model: dispatch tier
 
-- The dispatch model is `$DISPATCH_MODEL`, resolved in Step 1 from config `runtime.dispatch_model`.
-  - **Non-empty** → every `Agent` dispatch (implementer, spec reviewer, code quality reviewer, parallel work, any subagent) **must explicitly set `model: "<DISPATCH_MODEL>"`**.
-  - **Empty** (no config value, or no config.yaml) → **omit `model:`** so each subagent **inherits this session's model**. Never explicitly pass a model *cheaper* than the session to economize on a "simple" subtask.
+- The dispatch model is `$DISPATCH_MODEL`, resolved in Step 1 from config `runtime.dispatch_model`, then (on Grok) dropped unless it is a live host slug. `echo "DISPATCH_MODEL=…"` in Step 1 is the value to use — already empty when the slug is not on this host.
+  - **Non-empty** → every `Agent` / `spawn_subagent` dispatch (implementer, spec reviewer, code quality reviewer, parallel work, any subagent) **must explicitly set `model: "<DISPATCH_MODEL>"`**.
+  - **Empty** (no config value, no config.yaml, or the configured slug is not a host model) → **omit `model:`** so each subagent **inherits this session's model**. Never explicitly pass a model *cheaper* than the session to economize on a "simple" subtask.
+- spawn_subagent has no effort / `reasoning_effort` field. Do not invent one. Omitting `model:` is what inherits this session's reasoning effort (e.g. `xhigh` on `grok-4.6`) along with the model.
 - The same dispatch-model rule applies to external reviewers (`superpowers:requesting-code-review` and friends) where a model parameter is accepted — set `model: "<DISPATCH_MODEL>"` when non-empty, otherwise omit it.
 - If a subagent type does not accept a model override, accept the default — but do not deliberately route work to cheaper agents.
 
@@ -169,15 +222,17 @@ These apply throughout execution and override any cost-cutting guidance the skil
 - Per `superpowers:subagent-driven-development`, every task includes a **spec compliance review** and a **code quality review**. Never skip either, never short-circuit the re-review loop after a fix.
 - This holds even if the task looks trivial.
 
-## Step 6 — React to hook signals
+## Step 6 — React to STOP (hook on Claude Code, `signals.json` on Grok)
 
-The `PostToolUse` hook will inject system reminders of two kinds. These appear
+### Claude Code — hook reminders
+
+The `PostToolUse` hook injects system reminders of two kinds. These appear
 **only** in the session where you started `/do-plan` (the hook is gated on the
 per-session config file written in Step 2) — and for the rest of that session, even
 after `/do-plan` finishes; in any other session (including an ordinary one in the
 same cwd) it stays silent.
 
-### Milestone (informational)
+#### Milestone (informational)
 
 ```
 ctx:150k
@@ -189,21 +244,50 @@ ctx:225k
 
 Every 25k starting at 150k. **Do not change behavior.** Keep executing the plan. Do not even acknowledge the milestone in chat unless it carries STOP — these are passive situational awareness markers.
 
-### STOP signal (action required)
+#### STOP signal (action required)
 
 ```
 ctx:<N>k STOP threshold=<T>k - invoke /claude-mesh:pause-after-current-task
 ```
 
-When you see this:
+When you see this, follow **On STOP** below.
+
+The STOP signal fires exactly once per session. If it has already fired and you somehow missed it, check that the hook's STOP-marker file (`<plugin-data>/state/context-stop-<session>.txt`) exists — but in normal flow, just trust the first reminder.
+
+### Grok — poll `signals.json` (primary)
+
+The harness knows the window (status line, `/session-info`, `/context`). **You do not:** those surfaces are not in the model context. The 0.14.x `PostToolUse` hook also does not deliver `ctx:…` here (Grok ignores that stdout). Do not wait for a hook reminder.
+
+After each task reaches a clean checkpoint, **before dispatching the next task**, read the live count. Substitute the `CONTEXT_SIGNALS=` path echoed in Step 1 (a shell variable does not survive between Bash calls). If that echo was empty, re-glob:
+
+```bash
+grok_home="${GROK_HOME:-$HOME/.grok}"
+SID="${GROK_SESSION_ID:-}"
+CONTEXT_SIGNALS=""
+[ -n "$SID" ] || { echo "CONTEXT_USED="; exit 0; }
+for f in "$grok_home"/sessions/*/"$SID"/signals.json; do
+    [ -f "$f" ] && CONTEXT_SIGNALS="$f" && break
+done
+if [ -z "$CONTEXT_SIGNALS" ]; then
+    echo "ВНИМАНИЕ: signals.json не найден — STOP по порогу на этом чекпоинте не проверяем" >&2
+    echo "CONTEXT_USED="
+    exit 0
+fi
+VAL=$(jq -r '.contextTokensUsed // empty' "$CONTEXT_SIGNALS")
+echo "CONTEXT_USED=${VAL}"
+```
+
+Compare the integer after `CONTEXT_USED=` to the STOP threshold from Step 1. If `>=` threshold, follow **On STOP** below. If the file is missing or the field is empty, the snippet prints one WARN on stderr and `CONTEXT_USED=` — keep going, do not invent a count.
+
+Do not treat auto-compact (default 85% of the Grok window, often 425k on a 500k window) as the `/do-plan` threshold. Compact is later and is not a pause.
+
+### On STOP
 
 1. **Do not abort mid-task.** The current task must reach a clean checkpoint first.
 2. Invoke the `pause-after-current-task` skill via the `Skill` tool. That skill encodes the entire state machine (implementer DONE → spec review ✅ → code review ✅ → mark complete in TodoWrite → checkpoint report).
 3. Do **not** dispatch the next task.
 4. Do **not** invoke `/claude-mesh:continue-plan-fresh-session` yourself — that is the user's manual action after they return.
 5. After `pause-after-current-task` emits its standard checkpoint report, yield to the user.
-
-The STOP signal fires exactly once per session. If it has already fired and you somehow missed it, check that the hook's STOP-marker file (`<plugin-data>/state/context-stop-<session>.txt`) exists — but in normal flow, just trust the first reminder.
 
 ## Step 7 — End of plan
 

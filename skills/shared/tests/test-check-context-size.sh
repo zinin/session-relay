@@ -76,6 +76,40 @@ run_hook() {
     printf '%s' "$out"
 }
 
+# run_hook_grok <usage_total> <session> <subagent_type> <config_owner|-> [stop_threshold] [data_via]
+#   Grok envelope: no transcript_path, camelCase sessionId/hookEventName, usage from
+#   $GROK_HOME/sessions/<encoded-cwd>/<session>/signals.json (contextTokensUsed).
+#   data_via: "claude" (default) sets CLAUDE_PLUGIN_DATA; "grok" sets only GROK_PLUGIN_DATA
+#   so the hook must honour the Grok alias when the Claude one is unset.
+run_hook_grok() {
+    local usage="$1" session="$2" subagent_type="$3" config_owner="$4" threshold="${5:-250000}" data_via="${6:-claude}"
+    local cwd="/test/proj"
+    local cwd_enc="-test-proj"
+    local tmp; tmp="$(mktemp -d)"
+    mkdir -p "$tmp/state"
+    mkdir -p "$tmp/grok/sessions/%2Ftest%2Fproj/${session}"
+    jq -nc --argjson u "$usage" '{contextTokensUsed:$u}' \
+        > "$tmp/grok/sessions/%2Ftest%2Fproj/${session}/signals.json"
+    if [ "$config_owner" != "-" ]; then
+        jq -nc --argjson thr "$threshold" '{stop_threshold:$thr}' \
+            > "$tmp/state/do-plan-config-${cwd_enc}-${config_owner}.json"
+    fi
+    local stdin; stdin="$(jq -nc --arg c "$cwd" --arg s "$session" --arg st "$subagent_type" \
+        '{sessionId:$s,cwd:$c,hookEventName:"PostToolUse",subagentType:$st}')"
+    local out rc env_args
+    env_args=(GROK_HOME="$tmp/grok" GROK_SESSION_ID="$session")
+    if [ "$data_via" = grok ]; then
+        env_args+=(GROK_PLUGIN_DATA="$tmp")
+        out="$(printf '%s' "$stdin" | env -u CLAUDE_PLUGIN_DATA "${env_args[@]}" bash "$HOOK" 2>/dev/null)"; rc=$?
+    else
+        env_args+=(CLAUDE_PLUGIN_DATA="$tmp")
+        out="$(printf '%s' "$stdin" | env "${env_args[@]}" bash "$HOOK" 2>/dev/null)"; rc=$?
+    fi
+    rm -rf "$tmp"
+    [ "$rc" -eq 0 ] || out="${out}[hook exited rc=${rc}]"
+    printf '%s' "$out"
+}
+
 echo "== check-context-size: session gate =="
 
 # --- Gate drivers: silent unless THIS session owns a /do-plan config ---
@@ -95,6 +129,32 @@ assert_contains "own config + 260k/thr250k → STOP" "STOP" "$STOP_OUT"
 
 assert_silent "subagent (agent_id set) → silent" \
     "$(run_hook 200000 sessA "sub-123" sessA)"
+
+# Parent PostToolUse on Task carries the child's type in tool_input, not as a
+# top-level subagent_type / agent_id. The guard must not treat that as a
+# subagent fire — that is the STOP delivery path on Claude Code.
+run_hook_parent_task() {
+    local usage="$1" session="$2"
+    local cwd="/test/proj" cwd_enc="-test-proj"
+    local tmp; tmp="$(mktemp -d)"
+    mkdir -p "$tmp/state"
+    local transcript="$tmp/${session}.jsonl"
+    jq -nc --argjson u "$usage" \
+        '{type:"assistant",message:{usage:{input_tokens:$u,cache_creation_input_tokens:0,cache_read_input_tokens:0}}}' \
+        > "$transcript"
+    jq -nc --argjson thr 250000 '{stop_threshold:$thr}' \
+        > "$tmp/state/do-plan-config-${cwd_enc}-${session}.json"
+    local stdin; stdin="$(jq -nc --arg t "$transcript" --arg c "$cwd" \
+        '{transcript_path:$t,cwd:$c,hook_event_name:"PostToolUse",tool_name:"Task",tool_input:{subagent_type:"general-purpose"},agent_id:""}')"
+    local out rc
+    out="$(printf '%s' "$stdin" | CLAUDE_PLUGIN_DATA="$tmp" bash "$HOOK" 2>/dev/null)"; rc=$?
+    rm -rf "$tmp"
+    [ "$rc" -eq 0 ] || out="${out}[hook exited rc=${rc}]"
+    printf '%s' "$out"
+}
+assert_contains "parent PostToolUse on Task (tool_input.subagent_type, empty agent_id) → ctx:200k" "ctx:200k" \
+    "$(run_hook_parent_task 200000 sessA)"
+
 assert_silent "own config + 100k (below 150k floor) → silent" \
     "$(run_hook 100000 sessA "" sessA)"
 
@@ -109,6 +169,52 @@ assert_not_contains "own config + 260k/thr300k → no STOP (below threshold)" "S
 MAL_OUT="$(run_hook 200000 sessA "" sessA 250000 'this is not json')"
 assert_contains "malformed own config → milestone still emits (no crash)" "ctx:200k" "$MAL_OUT"
 assert_not_contains "malformed own config → no STOP (threshold unreadable)" "STOP" "$MAL_OUT"
+
+echo "== check-context-size: Grok envelope (sessionId + signals.json) =="
+
+assert_silent "Grok: no config for this session → silent at 200k" \
+    "$(run_hook_grok 200000 sessG "" "-")"
+assert_silent "Grok: config owned by a DIFFERENT session → silent at 200k" \
+    "$(run_hook_grok 200000 sessG "" sessOther)"
+
+GROK_OUT="$(run_hook_grok 200000 sessG "" sessG)"
+assert_contains "Grok: own config + 200k signals.json → ctx:200k" "ctx:200k" "$GROK_OUT"
+assert_contains "Grok: PostToolUse envelope is echoed in hookSpecificOutput" "PostToolUse" "$GROK_OUT"
+
+GROK_STOP="$(run_hook_grok 260000 sessG "" sessG 250000)"
+assert_contains "Grok: 260k/thr250k → milestone ctx:250k" "ctx:250k" "$GROK_STOP"
+assert_contains "Grok: 260k/thr250k → STOP" "STOP" "$GROK_STOP"
+
+assert_silent "Grok: own config + 100k (below 150k floor) → silent" \
+    "$(run_hook_grok 100000 sessG "" sessG)"
+
+GROK_DATA="$(run_hook_grok 200000 sessG "" sessG 250000 grok)"
+assert_contains "Grok: GROK_PLUGIN_DATA (no CLAUDE_PLUGIN_DATA) + 200k → ctx:200k" "ctx:200k" "$GROK_DATA"
+
+assert_silent "Grok: subagentType set → silent (do not write STOP_FIRED in the child)" \
+    "$(run_hook_grok 200000 sessG "general-purpose" sessG)"
+
+# Dummy transcript_path must not steal SESSION_KEY from sessionId.
+run_hook_grok_dummy_transcript() {
+    local usage="$1" session="$2"
+    local cwd="/test/proj" cwd_enc="-test-proj"
+    local tmp; tmp="$(mktemp -d)"
+    mkdir -p "$tmp/state"
+    mkdir -p "$tmp/grok/sessions/%2Ftest%2Fproj/${session}"
+    jq -nc --argjson u "$usage" '{contextTokensUsed:$u}' \
+        > "$tmp/grok/sessions/%2Ftest%2Fproj/${session}/signals.json"
+    jq -nc --argjson thr 250000 '{stop_threshold:$thr}' \
+        > "$tmp/state/do-plan-config-${cwd_enc}-${session}.json"
+    local stdin; stdin="$(jq -nc --arg c "$cwd" --arg s "$session" \
+        '{transcript_path:"/no/such/transcript.jsonl",sessionId:$s,cwd:$c,hookEventName:"PostToolUse"}')"
+    local out rc
+    out="$(printf '%s' "$stdin" | CLAUDE_PLUGIN_DATA="$tmp" GROK_HOME="$tmp/grok" GROK_SESSION_ID="$session" bash "$HOOK" 2>/dev/null)"; rc=$?
+    rm -rf "$tmp"
+    [ "$rc" -eq 0 ] || out="${out}[hook exited rc=${rc}]"
+    printf '%s' "$out"
+}
+assert_contains "Grok: dummy transcript_path + sessionId → still ctx:200k from signals.json" "ctx:200k" \
+    "$(run_hook_grok_dummy_transcript 200000 sessG)"
 
 echo
 echo "RESULTS: $PASS passed, $FAIL failed"

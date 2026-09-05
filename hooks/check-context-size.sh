@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# check-context-size.sh — Claude Code PostToolUse hook
+# check-context-size.sh — PostToolUse hook (Claude Code; Grok may fire it too)
 #
-# Reads exact context usage from session transcript (usage.input_tokens +
-# usage.cache_creation_input_tokens + usage.cache_read_input_tokens) and
-# emits a compact additionalContext system reminder to the model.
+# Reads context usage from:
+#   - Claude Code: session transcript JSONL (usage.input_tokens +
+#     usage.cache_creation_input_tokens + usage.cache_read_input_tokens)
+#   - Grok Build:  ~/.grok/sessions/<cwd>/<session>/signals.json → contextTokensUsed
+# and emits a compact additionalContext system reminder to the model.
 #
 # SESSION-SCOPED: active only for the session in which /do-plan was started (and
 # for the rest of that session, even after /do-plan finishes). /do-plan writes a
@@ -24,24 +26,27 @@
 #
 # Source of truth: github.com/zinin/claude-mesh/hooks/check-context-size.sh
 # Wired in:        github.com/zinin/claude-mesh/hooks/hooks.json
-# Reads state from: ${CLAUDE_PLUGIN_DATA}/state/  (= ~/.claude/plugins/data/claude-mesh-zinin/state/)
+# Reads state from: ${CLAUDE_PLUGIN_DATA:-$GROK_PLUGIN_DATA}/state/
 
 set -euo pipefail
 
-# ---- Input from Claude Code (JSON on stdin) ----
+# ---- Input: Claude Code snake_case and Grok camelCase on the same keys ----
 INPUT="$(cat || true)"
 TRANSCRIPT_PATH="$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)"
 CWD="$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null || true)"
-HOOK_EVENT="$(printf '%s' "$INPUT" | jq -r '.hook_event_name // empty' 2>/dev/null || true)"
-AGENT_ID="$(printf '%s' "$INPUT" | jq -r '.agent_id // empty' 2>/dev/null || true)"
+HOOK_EVENT="$(printf '%s' "$INPUT" | jq -r '.hook_event_name // .hookEventName // empty' 2>/dev/null || true)"
+AGENT_ID="$(printf '%s' "$INPUT" | jq -r '.agent_id // .agentId // empty' 2>/dev/null || true)"
+SESSION_ID="$(printf '%s' "$INPUT" | jq -r '.session_id // .sessionId // empty' 2>/dev/null || true)"
+SUBAGENT_TYPE="$(printf '%s' "$INPUT" | jq -r '.subagent_type // .subagentType // empty' 2>/dev/null || true)"
 
-[ -z "$TRANSCRIPT_PATH" ] && exit 0
-[ ! -f "$TRANSCRIPT_PATH" ] && exit 0
-
-# Skip any fire where agent_id is non-empty. Covers two cases:
+# Skip any fire from inside a subagent. Covers:
 #
-# 1. PostToolUse from inside a subagent's own tool calls — additionalContext
-#    would route to the subagent's context, not the parent's.
+# 1. PostToolUse from inside a subagent's own tool calls —
+#    additionalContext would route to the subagent's context, not the parent's.
+#    Claude Code: non-empty agent_id. Grok: non-empty subagentType.
+#    Read those as top-level envelope fields, never tool_input.subagent_type:
+#    a parent PostToolUse on Task carries the child's type in tool_input and
+#    must still emit STOP into the parent context.
 #
 # 2. SubagentStop (carries the stopping subagent's agent_id). Empirically
 #    verified (see claude-tools/check-context-bug-2026-05-24-followup.md):
@@ -53,8 +58,25 @@ AGENT_ID="$(printf '%s' "$INPUT" | jq -r '.agent_id // empty' 2>/dev/null || tru
 #    PostToolUse:Agent (fired ~62ms after SubagentStop, in parent context
 #    with empty agent_id) reliably delivers the reminder. SubagentStop is
 #    also no longer registered in settings.json; this guard is defense in
-#    depth in case it gets re-added by mistake.
-if [ -n "$AGENT_ID" ]; then
+#    depth in case it gets re-added by mistake. Grok has not been observed
+#    sending a SubagentStop equivalent; empty subagentType there is treated
+#    as the parent, same as empty agent_id on Claude Code.
+if [ -n "$AGENT_ID" ] || [ -n "$SUBAGENT_TYPE" ]; then
+    exit 0
+fi
+
+# Session key: Claude transcript stem, else Grok sessionId / GROK_SESSION_ID.
+# Must be byte-equal to the SID /do-plan wrote into do-plan-config-<cwd>-<SID>.json.
+# Require the transcript file to exist: a dummy transcript_path (Grok, or a
+# payload that names a path that is not on disk) must not steal SESSION_KEY
+# from sessionId / GROK_SESSION_ID.
+if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
+    SESSION_KEY="$(basename "$TRANSCRIPT_PATH" .jsonl)"
+elif [ -n "$SESSION_ID" ]; then
+    SESSION_KEY="$SESSION_ID"
+elif [ -n "${GROK_SESSION_ID:-}" ]; then
+    SESSION_KEY="$GROK_SESSION_ID"
+else
     exit 0
 fi
 
@@ -69,11 +91,8 @@ else
     CWD_ENC="unknown"
 fi
 
-STATE_DIR="${CLAUDE_PLUGIN_DATA:-$HOME/.claude/plugins/data/claude-mesh-zinin}/state"
+STATE_DIR="${CLAUDE_PLUGIN_DATA:-${GROK_PLUGIN_DATA:-$HOME/.claude/plugins/data/claude-mesh-zinin}}/state"
 mkdir -p "$STATE_DIR"
-
-# ---- Per-session state (keyed off transcript filename, NOT cwd) ----
-SESSION_KEY="$(basename "$TRANSCRIPT_PATH" .jsonl)"
 
 # ---- Gate: emit ONLY inside the session where /do-plan was started ----
 # /do-plan writes a PER-SESSION config do-plan-config-<cwd>-<session>.json (see
@@ -96,26 +115,32 @@ STATE_STOP="$STATE_DIR/context-stop-${SESSION_KEY}.txt"
 LAST_MILESTONE="$(cat "$STATE_MILESTONE" 2>/dev/null || echo "0")"
 STOP_FIRED="$(cat "$STATE_STOP" 2>/dev/null || echo "0")"
 
-# ---- Find latest assistant.usage from transcript ----
-# Fast path: scan last 200 lines (transcript is JSONL, one record per line)
-LATEST_USAGE="$(tail -n 200 "$TRANSCRIPT_PATH" 2>/dev/null \
-    | jq -c 'select(.type=="assistant" and .message.usage!=null) | .message.usage' 2>/dev/null \
-    | tail -n 1 || true)"
-
-# Fallback: full-file scan (handles long stretches with no assistant turns)
-if [ -z "$LATEST_USAGE" ]; then
-    LATEST_USAGE="$(jq -c 'select(.type=="assistant" and .message.usage!=null) | .message.usage' \
-        "$TRANSCRIPT_PATH" 2>/dev/null | tail -n 1 || true)"
+# ---- Context size: Claude transcript JSONL, else Grok signals.json ----
+CONTEXT_SIZE=""
+if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
+    # Fast path: scan last 200 lines (transcript is JSONL, one record per line)
+    LATEST_USAGE="$(tail -n 200 "$TRANSCRIPT_PATH" 2>/dev/null \
+        | jq -c 'select(.type=="assistant" and .message.usage!=null) | .message.usage' 2>/dev/null \
+        | tail -n 1 || true)"
+    if [ -z "$LATEST_USAGE" ]; then
+        LATEST_USAGE="$(jq -c 'select(.type=="assistant" and .message.usage!=null) | .message.usage' \
+            "$TRANSCRIPT_PATH" 2>/dev/null | tail -n 1 || true)"
+    fi
+    [ -n "$LATEST_USAGE" ] && CONTEXT_SIZE="$(printf '%s' "$LATEST_USAGE" | jq -r '
+        (.input_tokens // 0)
+        + (.cache_creation_input_tokens // 0)
+        + (.cache_read_input_tokens // 0)
+    ' 2>/dev/null || echo "0")"
+else
+    grok_home="${GROK_HOME:-$HOME/.grok}"
+    for signals in "$grok_home"/sessions/*/"$SESSION_KEY"/signals.json; do
+        [ -f "$signals" ] || continue
+        CONTEXT_SIZE="$(jq -r '.contextTokensUsed // empty' "$signals" 2>/dev/null || true)"
+        break
+    done
 fi
 
-[ -z "$LATEST_USAGE" ] && exit 0
-
-# ---- Compute context size ----
-CONTEXT_SIZE="$(printf '%s' "$LATEST_USAGE" | jq -r '
-    (.input_tokens // 0)
-    + (.cache_creation_input_tokens // 0)
-    + (.cache_read_input_tokens // 0)
-' 2>/dev/null || echo "0")"
+[ -n "$CONTEXT_SIZE" ] || exit 0
 
 # Numeric sanity
 case "$CONTEXT_SIZE" in
@@ -168,7 +193,8 @@ fi
 
 # ---- Emit additionalContext for the model ----
 # Echo back the event we were invoked for (PostToolUse or SubagentStop) so the
-# harness matches the output to the right schema.
+# harness matches the output to the right schema. Grok ignores PostToolUse stdout;
+# /do-plan there polls signals.json instead of waiting for this reminder.
 jq -nc --arg msg "$MSG" --arg event "${HOOK_EVENT:-PostToolUse}" '{
     hookSpecificOutput: {
         hookEventName: $event,
