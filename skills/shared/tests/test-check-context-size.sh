@@ -129,6 +129,32 @@ assert_contains "own config + 260k/thr250k → STOP" "STOP" "$STOP_OUT"
 
 assert_silent "subagent (agent_id set) → silent" \
     "$(run_hook 200000 sessA "sub-123" sessA)"
+
+# Parent PostToolUse on Task carries the child's type in tool_input, not as a
+# top-level subagent_type / agent_id. The guard must not treat that as a
+# subagent fire — that is the STOP delivery path on Claude Code.
+run_hook_parent_task() {
+    local usage="$1" session="$2"
+    local cwd="/test/proj" cwd_enc="-test-proj"
+    local tmp; tmp="$(mktemp -d)"
+    mkdir -p "$tmp/state"
+    local transcript="$tmp/${session}.jsonl"
+    jq -nc --argjson u "$usage" \
+        '{type:"assistant",message:{usage:{input_tokens:$u,cache_creation_input_tokens:0,cache_read_input_tokens:0}}}' \
+        > "$transcript"
+    jq -nc --argjson thr 250000 '{stop_threshold:$thr}' \
+        > "$tmp/state/do-plan-config-${cwd_enc}-${session}.json"
+    local stdin; stdin="$(jq -nc --arg t "$transcript" --arg c "$cwd" \
+        '{transcript_path:$t,cwd:$c,hook_event_name:"PostToolUse",tool_name:"Task",tool_input:{subagent_type:"general-purpose"},agent_id:""}')"
+    local out rc
+    out="$(printf '%s' "$stdin" | CLAUDE_PLUGIN_DATA="$tmp" bash "$HOOK" 2>/dev/null)"; rc=$?
+    rm -rf "$tmp"
+    [ "$rc" -eq 0 ] || out="${out}[hook exited rc=${rc}]"
+    printf '%s' "$out"
+}
+assert_contains "parent PostToolUse on Task (tool_input.subagent_type, empty agent_id) → ctx:200k" "ctx:200k" \
+    "$(run_hook_parent_task 200000 sessA)"
+
 assert_silent "own config + 100k (below 150k floor) → silent" \
     "$(run_hook 100000 sessA "" sessA)"
 
@@ -167,6 +193,28 @@ assert_contains "Grok: GROK_PLUGIN_DATA (no CLAUDE_PLUGIN_DATA) + 200k → ctx:2
 
 assert_silent "Grok: subagentType set → silent (do not write STOP_FIRED in the child)" \
     "$(run_hook_grok 200000 sessG "general-purpose" sessG)"
+
+# Dummy transcript_path must not steal SESSION_KEY from sessionId.
+run_hook_grok_dummy_transcript() {
+    local usage="$1" session="$2"
+    local cwd="/test/proj" cwd_enc="-test-proj"
+    local tmp; tmp="$(mktemp -d)"
+    mkdir -p "$tmp/state"
+    mkdir -p "$tmp/grok/sessions/%2Ftest%2Fproj/${session}"
+    jq -nc --argjson u "$usage" '{contextTokensUsed:$u}' \
+        > "$tmp/grok/sessions/%2Ftest%2Fproj/${session}/signals.json"
+    jq -nc --argjson thr 250000 '{stop_threshold:$thr}' \
+        > "$tmp/state/do-plan-config-${cwd_enc}-${session}.json"
+    local stdin; stdin="$(jq -nc --arg c "$cwd" --arg s "$session" \
+        '{transcript_path:"/no/such/transcript.jsonl",sessionId:$s,cwd:$c,hookEventName:"PostToolUse"}')"
+    local out rc
+    out="$(printf '%s' "$stdin" | CLAUDE_PLUGIN_DATA="$tmp" GROK_HOME="$tmp/grok" GROK_SESSION_ID="$session" bash "$HOOK" 2>/dev/null)"; rc=$?
+    rm -rf "$tmp"
+    [ "$rc" -eq 0 ] || out="${out}[hook exited rc=${rc}]"
+    printf '%s' "$out"
+}
+assert_contains "Grok: dummy transcript_path + sessionId → still ctx:200k from signals.json" "ctx:200k" \
+    "$(run_hook_grok_dummy_transcript 200000 sessG)"
 
 echo
 echo "RESULTS: $PASS passed, $FAIL failed"

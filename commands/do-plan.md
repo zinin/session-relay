@@ -35,7 +35,8 @@ LOADER="${CLAUDE_PLUGIN_ROOT}/skills/shared/config-loader.sh"
 [ -f "$LOADER" ] || { echo "/claude-mesh:do-plan: config-loader.sh not found (is claude-mesh installed?)" >&2; exit 1; }
 LOADER_ERR=$(mktemp -t do-plan-loader-XXXXXX.err) \
     || { echo "/claude-mesh:do-plan: mktemp failed" >&2; exit 1; }
-trap 'rm -f "$LOADER_ERR"' EXIT
+GM=""
+trap 'rm -f "$LOADER_ERR" "$GM"' EXIT
 
 DEFAULT_STOP=$("$LOADER" get-flag do_plan_default_stop_tokens 2>"$LOADER_ERR")
 case "$?" in
@@ -68,11 +69,17 @@ if [ -n "${GROK_SESSION_ID:-}" ] && [ -n "$DISPATCH_MODEL" ]; then
             ''|*[!0-9]*|0) echo "ВНИМАНИЕ: GROK_MODELS_TIMEOUT='$GMT' не число — использую 30" >&2; GMT=30 ;;
         esac
         LIST_HM="$(dirname "$LOADER")/list-host-models.sh"
-        if [ -f "$LIST_HM" ] && timeout "$GMT" grok models >"$GM" 2>/dev/null; then
+        if [ ! -f "$LIST_HM" ]; then
+            echo "ВНИМАНИЕ: list-host-models.sh не найден — runtime.dispatch_model=$DISPATCH_MODEL не проверялся, наследуем модель сессии" >&2
+            DISPATCH_MODEL=""
+        elif timeout "$GMT" grok models >"$GM" 2>/dev/null; then
             HOST_MODELS=$(bash "$LIST_HM" --from-file "$GM")
         fi
         rm -f "$GM"
-        if [ -z "$HOST_MODELS" ]; then
+        GM=""
+        if [ -z "$DISPATCH_MODEL" ]; then
+            : # already inherit (missing list-host-models.sh)
+        elif [ -z "$HOST_MODELS" ]; then
             echo "ВНИМАНИЕ: каталог хоста пуст или grok models не удался — runtime.dispatch_model=$DISPATCH_MODEL не передаём, наследуем модель сессии" >&2
             DISPATCH_MODEL=""
         elif ! printf '%s\n' "$HOST_MODELS" | grep -Fxq -- "$DISPATCH_MODEL"; then
@@ -111,7 +118,7 @@ Reject anything else with a one-line error and stop. Do not guess.
 
 ### Validate threshold >= 150 000
 
-The hook (`check-context-size.sh`) emits **nothing** below 150 000 tokens — that is a firm agreement, not a tunable. Therefore a STOP threshold below 150 000 would never fire and is rejected.
+The hook (`check-context-size.sh`) emits **nothing** below 150 000 tokens — that is a firm agreement, not a tunable. Therefore a STOP threshold below 150 000 would never fire and is rejected. On Grok the primary STOP channel is the `signals.json` poll, not the hook; the same floor still applies so one threshold cannot mean two different things across hosts.
 
 After resolving the input to an integer, check `threshold >= 150000`. If not, output exactly one line and stop:
 
@@ -142,10 +149,10 @@ mkdir -p "$PLUGIN_DATA/state"
 CWD_ENC=$(pwd | sed 's|/|-|g')
 
 # Bind the hook to THIS session via a PER-SESSION config file
-# do-plan-config-<cwd>-<session>.json. check-context-size.sh reads the file named
-# for its own session (SESSION_KEY="$(basename "$TRANSCRIPT_PATH" .jsonl)"), so the
-# id below must be byte-equal to that stem. Per-session keying means two concurrent
-# /do-plan runs in one cwd never clobber each other.
+# do-plan-config-<cwd>-<session>.json. check-context-size.sh keys the file off
+# the transcript stem when that file exists, else Grok sessionId / $GROK_SESSION_ID
+# (see the hook). SID below must be byte-equal to that key. Per-session keying
+# means two concurrent /do-plan runs in one cwd never clobber each other.
 #
 # No transcript-dir glob fallback (iter-1 review ISSUE-1/2): ~/.claude/projects/
 # dir names encode '.'/'_'->'-' too (not just '/'), so a sed 's|/|-|g' glob misses
@@ -261,10 +268,16 @@ CONTEXT_SIGNALS=""
 for f in "$grok_home"/sessions/*/"$SID"/signals.json; do
     [ -f "$f" ] && CONTEXT_SIGNALS="$f" && break
 done
-[ -n "$CONTEXT_SIGNALS" ] && jq -r '.contextTokensUsed // empty' "$CONTEXT_SIGNALS"
+if [ -z "$CONTEXT_SIGNALS" ]; then
+    echo "ВНИМАНИЕ: signals.json не найден — STOP по порогу на этом чекпоинте не проверяем" >&2
+    echo "CONTEXT_USED="
+    exit 0
+fi
+VAL=$(jq -r '.contextTokensUsed // empty' "$CONTEXT_SIGNALS")
+echo "CONTEXT_USED=${VAL}"
 ```
 
-Compare the integer to the STOP threshold from Step 1. If `>=` threshold, follow **On STOP** below. If the file is missing or the field is empty, print one WARN and keep going — do not invent a count.
+Compare the integer after `CONTEXT_USED=` to the STOP threshold from Step 1. If `>=` threshold, follow **On STOP** below. If the file is missing or the field is empty, the snippet prints one WARN on stderr and `CONTEXT_USED=` — keep going, do not invent a count.
 
 Do not treat auto-compact (default 85% of the Grok window, often 425k on a 500k window) as the `/do-plan` threshold. Compact is later and is not a pause.
 

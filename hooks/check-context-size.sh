@@ -44,6 +44,9 @@ SUBAGENT_TYPE="$(printf '%s' "$INPUT" | jq -r '.subagent_type // .subagentType /
 # 1. PostToolUse from inside a subagent's own tool calls —
 #    additionalContext would route to the subagent's context, not the parent's.
 #    Claude Code: non-empty agent_id. Grok: non-empty subagentType.
+#    Read those as top-level envelope fields, never tool_input.subagent_type:
+#    a parent PostToolUse on Task carries the child's type in tool_input and
+#    must still emit STOP into the parent context.
 #
 # 2. SubagentStop (carries the stopping subagent's agent_id). Empirically
 #    verified (see claude-tools/check-context-bug-2026-05-24-followup.md):
@@ -55,14 +58,19 @@ SUBAGENT_TYPE="$(printf '%s' "$INPUT" | jq -r '.subagent_type // .subagentType /
 #    PostToolUse:Agent (fired ~62ms after SubagentStop, in parent context
 #    with empty agent_id) reliably delivers the reminder. SubagentStop is
 #    also no longer registered in settings.json; this guard is defense in
-#    depth in case it gets re-added by mistake.
+#    depth in case it gets re-added by mistake. Grok has not been observed
+#    sending a SubagentStop equivalent; empty subagentType there is treated
+#    as the parent, same as empty agent_id on Claude Code.
 if [ -n "$AGENT_ID" ] || [ -n "$SUBAGENT_TYPE" ]; then
     exit 0
 fi
 
 # Session key: Claude transcript stem, else Grok sessionId / GROK_SESSION_ID.
 # Must be byte-equal to the SID /do-plan wrote into do-plan-config-<cwd>-<SID>.json.
-if [ -n "$TRANSCRIPT_PATH" ]; then
+# Require the transcript file to exist: a dummy transcript_path (Grok, or a
+# payload that names a path that is not on disk) must not steal SESSION_KEY
+# from sessionId / GROK_SESSION_ID.
+if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
     SESSION_KEY="$(basename "$TRANSCRIPT_PATH" .jsonl)"
 elif [ -n "$SESSION_ID" ]; then
     SESSION_KEY="$SESSION_ID"

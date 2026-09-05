@@ -61,6 +61,12 @@ assert_contains "Grok primary usage is contextTokensUsed" \
     'contextTokensUsed' "$CMD"
 assert_ge "says the Grok hook is not the primary STOP channel" "1" \
     "$(grep -ci 'not the primary' "$CMD" || true)"
+assert_contains "poll snippet prints CONTEXT_USED= even when the file is missing" \
+    'echo "CONTEXT_USED="' "$CMD"
+assert_contains "poll snippet WARNs when signals.json is missing" \
+    'signals.json не найден' "$CMD"
+assert_contains "missing list-host-models.sh is a distinct warning" \
+    'list-host-models.sh не найден' "$CMD"
 
 echo "== hooks.json: Claude Code path unchanged =="
 assert_ge "still registers PostToolUse" "1" \
