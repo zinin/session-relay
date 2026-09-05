@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-context-size.sh — PostToolUse (Claude Code) / PreToolUse (Grok) hook
+# check-context-size.sh — PostToolUse hook (Claude Code; Grok may fire it too)
 #
 # Reads context usage from:
 #   - Claude Code: session transcript JSONL (usage.input_tokens +
@@ -41,7 +41,7 @@ SUBAGENT_TYPE="$(printf '%s' "$INPUT" | jq -r '.subagent_type // .subagentType /
 
 # Skip any fire from inside a subagent. Covers:
 #
-# 1. PostToolUse / PreToolUse from inside a subagent's own tool calls —
+# 1. PostToolUse from inside a subagent's own tool calls —
 #    additionalContext would route to the subagent's context, not the parent's.
 #    Claude Code: non-empty agent_id. Grok: non-empty subagentType.
 #
@@ -184,9 +184,9 @@ fi
 [ -z "$MSG" ] && exit 0
 
 # ---- Emit additionalContext for the model ----
-# Echo back the event we were invoked for (PostToolUse, PreToolUse, …) so the
-# harness matches the output to the right schema. Grok delivers additionalContext
-# from PreToolUse; PostToolUse stdout is ignored there.
+# Echo back the event we were invoked for (PostToolUse or SubagentStop) so the
+# harness matches the output to the right schema. Grok ignores PostToolUse stdout;
+# /do-plan there polls signals.json instead of waiting for this reminder.
 jq -nc --arg msg "$MSG" --arg event "${HOOK_EVENT:-PostToolUse}" '{
     hookSpecificOutput: {
         hookEventName: $event,

@@ -95,7 +95,7 @@ run_hook_grok() {
             > "$tmp/state/do-plan-config-${cwd_enc}-${config_owner}.json"
     fi
     local stdin; stdin="$(jq -nc --arg c "$cwd" --arg s "$session" --arg st "$subagent_type" \
-        '{sessionId:$s,cwd:$c,hookEventName:"PreToolUse",subagentType:$st}')"
+        '{sessionId:$s,cwd:$c,hookEventName:"PostToolUse",subagentType:$st}')"
     local out rc env_args
     env_args=(GROK_HOME="$tmp/grok" GROK_SESSION_ID="$session")
     if [ "$data_via" = grok ]; then
@@ -153,7 +153,7 @@ assert_silent "Grok: config owned by a DIFFERENT session → silent at 200k" \
 
 GROK_OUT="$(run_hook_grok 200000 sessG "" sessG)"
 assert_contains "Grok: own config + 200k signals.json → ctx:200k" "ctx:200k" "$GROK_OUT"
-assert_contains "Grok: PreToolUse envelope is echoed in hookSpecificOutput" "PreToolUse" "$GROK_OUT"
+assert_contains "Grok: PostToolUse envelope is echoed in hookSpecificOutput" "PostToolUse" "$GROK_OUT"
 
 GROK_STOP="$(run_hook_grok 260000 sessG "" sessG 250000)"
 assert_contains "Grok: 260k/thr250k → milestone ctx:250k" "ctx:250k" "$GROK_STOP"

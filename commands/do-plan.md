@@ -15,7 +15,7 @@ When the threshold is crossed, stop at a clean checkpoint via `/claude-mesh:paus
 How you learn that the threshold was crossed depends on the host:
 
 - **Claude Code:** the `PostToolUse` hook `check-context-size.sh` injects a `STOP` reminder into the model context. That is the primary signal. Follow Step 6.
-- **Grok:** that hook is **not the primary** STOP channel. Grok ignores `PostToolUse` stdout, and the model does not receive the status-line `/session-info` / `/context` numbers. After each task checkpoint, read `contextTokensUsed` from the session `signals.json` (path echoed as `CONTEXT_SIGNALS=` in Step 1). If it is `>=` the STOP threshold, treat that as STOP and follow Step 6. A hook reminder, if one arrives via `PreToolUse`, is a backup — the first STOP wins, do not pause twice.
+- **Grok:** that hook is **not the primary** STOP channel. Grok ignores `PostToolUse` stdout, and the model does not receive the status-line `/session-info` / `/context` numbers. After each task checkpoint, read `contextTokensUsed` from the session `signals.json` (path echoed as `CONTEXT_SIGNALS=` in Step 1). If it is `>=` the STOP threshold, treat that as STOP and follow Step 6. Do not wait for a hook reminder.
 
 ## Step 1 — Determine threshold
 
@@ -265,8 +265,6 @@ done
 ```
 
 Compare the integer to the STOP threshold from Step 1. If `>=` threshold, follow **On STOP** below. If the file is missing or the field is empty, print one WARN and keep going — do not invent a count.
-
-A `PreToolUse` hook reminder, if one arrives, is a backup for the same rule. The first STOP wins.
 
 Do not treat auto-compact (default 85% of the Grok window, often 425k on a 500k window) as the `/do-plan` threshold. Compact is later and is not a pause.
 

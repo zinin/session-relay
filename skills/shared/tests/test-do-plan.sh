@@ -62,11 +62,14 @@ assert_contains "Grok primary usage is contextTokensUsed" \
 assert_ge "says the Grok hook is not the primary STOP channel" "1" \
     "$(grep -ci 'not the primary' "$CMD" || true)"
 
-echo "== hooks.json: Grok delivery path =="
-assert_ge "registers PreToolUse (Grok additionalContext path)" "1" \
-    "$(grep -c '"PreToolUse"' "$HOOKS" || true)"
-assert_ge "sets an explicit timeout (Grok observe default is 5s)" "1" \
-    "$(grep -c '"timeout"' "$HOOKS" || true)"
+echo "== hooks.json: Claude Code path unchanged =="
+assert_ge "still registers PostToolUse" "1" \
+    "$(grep -c '"PostToolUse"' "$HOOKS" || true)"
+if grep -Fq '"PreToolUse"' "$HOOKS"; then
+    FAIL=$((FAIL+1)); echo "  FAIL: hooks.json must not register PreToolUse (Claude Code uses PostToolUse; Grok STOP is signals.json)"
+else
+    PASS=$((PASS+1)); echo "  PASS: hooks.json has no PreToolUse"
+fi
 
 echo
 echo "RESULTS: $PASS passed, $FAIL failed"
