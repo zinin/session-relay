@@ -6,7 +6,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/check-context-size.sh"
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/check-context-size.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/check-context-size.sh",
+            "timeout": 10
           }
         ]
       }
