@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Contract tests for /do-plan host-aware dispatch and Grok session binding.
-# The command is prose the controller follows; these greps lock the sentences
-# that would silently regress to "always pass opus" or "abort without CLAUDE_CODE_SESSION_ID".
+# Contract and behaviour tests for skills/do-plan/SKILL.md.
+# The skill is prose the controller follows plus bash fences it runs. The greps lock the
+# sentences that would silently regress; the fence runs lock what Step 1 and Step 2 do.
 set -u
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$TESTS_DIR/.." && pwd)"
 CMD="$REPO/skills/do-plan/SKILL.md"
+HOOK="$REPO/hooks/check-context-size.sh"
 HOOKS="$REPO/hooks/hooks.json"
 
 FAIL=0
@@ -24,7 +25,11 @@ assert_ge() {
         FAIL=$((FAIL+1)); echo "  FAIL: $desc ($actual < $min)"
     fi
 }
-
+assert_eq() {
+    local desc="$1" expected="$2" actual="$3"
+    if [ "$expected" = "$actual" ]; then PASS=$((PASS+1)); echo "  PASS: $desc"
+    else FAIL=$((FAIL+1)); echo "  FAIL: $desc (expected '$expected', got '$actual')"; fi
+}
 assert_contains() {
     local desc="$1" needle="$2" file="$3"
     if grep -Fq -- "$needle" "$file"; then
@@ -32,6 +37,22 @@ assert_contains() {
     else
         FAIL=$((FAIL+1)); echo "  FAIL: $desc (missing in $file: '$needle')"
     fi
+}
+assert_has() {
+    local desc="$1" needle="$2" haystack="$3"
+    case "$haystack" in
+        *"$needle"*) PASS=$((PASS+1)); echo "  PASS: $desc" ;;
+        *) FAIL=$((FAIL+1)); echo "  FAIL: $desc (no '$needle' in: $haystack)" ;;
+    esac
+}
+# The n-th ```bash fence after the heading that starts with $1.
+fence() {
+    awk -v h="$1" -v want="${2:-1}" '
+        index($0, h) == 1 { in_sec = 1; next }
+        in_sec && /^## / { exit }
+        in_sec && /^```bash$/ { n++; if (n == want) { on = 1; next } }
+        on && /^```$/ { exit }
+        on { print }' "$CMD"
 }
 
 echo "== /do-plan: Grok session id =="
@@ -41,11 +62,9 @@ assert_ge "abort copy names both session id vars" "1" \
     "$(grep -c 'CLAUDE_CODE_SESSION_ID and GROK_SESSION_ID' "$CMD" || true)"
 
 echo "== /do-plan: host catalog filter =="
-assert_contains "probes the live host catalog via list-host-models.sh" \
-    'list-host-models.sh' "$CMD"
-assert_contains "membership is exact-line grep -Fxq" \
-    'grep -Fxq' "$CMD"
-assert_ge "clears DISPATCH_MODEL when the slug is not a host model (rc=2 inherit plus host-miss)" "2" \
+assert_contains "probes the live host catalog via list-host-models.sh" 'list-host-models.sh' "$CMD"
+assert_contains "membership is exact-line grep -Fxq" 'grep -Fxq' "$CMD"
+assert_ge "clears DISPATCH_MODEL when the slug is not a host model" "2" \
     "$(grep -c 'DISPATCH_MODEL=""' "$CMD" || true)"
 assert_ge "says inherit when the slug is missing from the host catalog" "1" \
     "$(grep -c 'наследуем модель сессии' "$CMD" || true)"
@@ -55,22 +74,56 @@ assert_ge "tells the controller spawn_subagent has no effort field" "1" \
     "$(grep -ci 'spawn_subagent has no' "$CMD" || true)"
 
 echo "== /do-plan: Grok reads context from signals.json, not the hook =="
-assert_contains "Step 1 echoes CONTEXT_SIGNALS path" \
-    'CONTEXT_SIGNALS=' "$CMD"
-assert_contains "Grok primary usage is contextTokensUsed" \
-    'contextTokensUsed' "$CMD"
+assert_contains "Step 1 echoes CONTEXT_SIGNALS path" 'CONTEXT_SIGNALS=' "$CMD"
+assert_contains "Grok primary usage is contextTokensUsed" 'contextTokensUsed' "$CMD"
 assert_ge "says the Grok hook is not the primary STOP channel" "1" \
     "$(grep -ci 'not the primary' "$CMD" || true)"
-assert_contains "poll snippet prints CONTEXT_USED= even when the file is missing" \
-    'echo "CONTEXT_USED="' "$CMD"
-assert_contains "poll snippet WARNs when signals.json is missing" \
-    'signals.json не найден' "$CMD"
-assert_contains "missing list-host-models.sh is a distinct warning" \
-    'list-host-models.sh не найден' "$CMD"
+assert_contains "poll snippet prints CONTEXT_USED= even when the file is missing" 'echo "CONTEXT_USED="' "$CMD"
+assert_contains "poll snippet WARNs when signals.json is missing" 'signals.json не найден' "$CMD"
+assert_contains "missing list-host-models.sh is a distinct warning" 'list-host-models.sh не найден' "$CMD"
+assert_contains "Step 1 reads the Grok context window" 'contextWindowTokens' "$CMD"
+assert_contains "the window warning says STOP will not fire" 'STOP не сработает' "$CMD"
+
+echo "== /do-plan: session-relay owns its config and state =="
+assert_eq "no mesh config-loader anywhere" "0" "$(grep -c 'config-loader' "$CMD" || true)"
+assert_eq "no claude-mesh name left" "0" "$(grep -c 'claude-mesh' "$CMD" || true)"
+assert_contains "default threshold is 400000" 'default 400000' "$CMD"
+assert_contains "state lives under XDG" 'STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/session-relay"' "$CMD"
+
+echo "== /do-plan: Step 1 behaviour =="
+STEP1="$(fence '### Resolve the config-driven default')"
+assert_ge "Step 1 fence extracted" "20" "$(printf '%s\n' "$STEP1" | grep -c .)"
+T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+OUT="$(cd "$T" && env -u CLAUDECODE -u GROK_SESSION_ID CLAUDE_PLUGIN_ROOT="$REPO" bash -c "$STEP1" 2>&1)"; RC=$?
+assert_eq "no Claude Code, no Grok → refuses (rc 1)" "1" "$RC"
+assert_has "…with the no-signal message" "do-plan здесь не поддерживается" "$OUT"
+mkdir -p "$T/xdg/session-relay"
+printf 'stop_tokens: 300000\ndispatch_model: opus\n' > "$T/xdg/session-relay/config.yaml"
+OUT="$(cd "$T" && env -u GROK_SESSION_ID CLAUDECODE=1 CLAUDE_PLUGIN_ROOT="$REPO" XDG_CONFIG_HOME="$T/xdg" bash -c "$STEP1" 2>&1)"; RC=$?
+assert_eq "Claude Code with a config → rc 0" "0" "$RC"
+assert_has "reads stop_tokens" "DEFAULT_STOP=300000" "$OUT"
+assert_has "reads dispatch_model" "DISPATCH_MODEL=opus" "$OUT"
+printf 'stop_tokens: 400k\n' > "$T/xdg/session-relay/config.yaml"
+OUT="$(cd "$T" && env -u GROK_SESSION_ID CLAUDECODE=1 CLAUDE_PLUGIN_ROOT="$REPO" XDG_CONFIG_HOME="$T/xdg" bash -c "$STEP1" 2>&1)"; RC=$?
+assert_eq "a config typo stops Step 1 (rc 1)" "1" "$RC"
+assert_has "…naming file and line" "$T/xdg/session-relay/config.yaml:1" "$OUT"
+rm -f "$T/xdg/session-relay/config.yaml"
+OUT="$(cd "$T" && env -u GROK_SESSION_ID CLAUDECODE=1 CLAUDE_PLUGIN_ROOT="$REPO" XDG_CONFIG_HOME="$T/xdg" bash -c "$STEP1" 2>&1)"; RC=$?
+assert_eq "no config file → defaults, rc 0" "0" "$RC"
+assert_has "…threshold 400000" "DEFAULT_STOP=400000" "$OUT"
+
+echo "== /do-plan Step 2 writes the per-session file under XDG_STATE_HOME =="
+STEP2="$(fence '## Step 2' | sed 's/<THRESHOLD>/400000/')"
+assert_ge "Step 2 fence extracted" "10" "$(printf '%s\n' "$STEP2" | grep -c .)"
+mkdir -p "$T/proj"
+( cd "$T/proj" && env -u GROK_SESSION_ID XDG_STATE_HOME="$T/st" CLAUDE_CODE_SESSION_ID=sid-42 bash -c "$STEP2" ); RC=$?
+assert_eq "Step 2 ran" "0" "$RC"
+CWD_ENC="$(printf '%s' "$T/proj" | sed 's|/|-|g')"
+WROTE="$T/st/session-relay/do-plan-config-${CWD_ENC}-sid-42.json"
+assert_eq "Step 2 wrote the per-session file under XDG_STATE_HOME" "400000" "$(jq -r '.stop_threshold' "$WROTE" 2>/dev/null)"
 
 echo "== hooks.json: Claude Code path unchanged =="
-assert_ge "still registers PostToolUse" "1" \
-    "$(grep -c '"PostToolUse"' "$HOOKS" || true)"
+assert_ge "still registers PostToolUse" "1" "$(grep -c '"PostToolUse"' "$HOOKS" || true)"
 if grep -Fq '"PreToolUse"' "$HOOKS"; then
     FAIL=$((FAIL+1)); echo "  FAIL: hooks.json must not register PreToolUse (Claude Code uses PostToolUse; Grok STOP is signals.json)"
 else
