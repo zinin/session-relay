@@ -1,0 +1,14 @@
+{
+  "name": "session-relay",
+  "version": "0.16.0",
+  "displayName": "Session Relay",
+  "description": "Run a plan until the context fills up, pause at a clean checkpoint, and hand the work to a fresh session",
+  "author": {
+    "name": "Alexander V. Zinin",
+    "email": "azinin@gmail.com",
+    "url": "https://github.com/zinin"
+  },
+  "repository": "https://github.com/zinin/session-relay",
+  "license": "MIT",
+  "keywords": ["agent-skills", "plan-execution", "context", "session-handoff", "subagent-driven-development"]
+}
