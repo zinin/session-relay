@@ -4,8 +4,8 @@
 # that would silently regress to "always pass opus" or "abort without CLAUDE_CODE_SESSION_ID".
 set -u
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO="$(cd "$TESTS_DIR/../../.." && pwd)"
-CMD="$REPO/commands/do-plan.md"
+REPO="$(cd "$TESTS_DIR/.." && pwd)"
+CMD="$REPO/skills/do-plan/SKILL.md"
 HOOKS="$REPO/hooks/hooks.json"
 
 FAIL=0

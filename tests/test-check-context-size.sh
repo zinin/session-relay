@@ -8,7 +8,7 @@
 # THIS session's own file exists. Concurrent /do-plan runs in one cwd never clash.
 set -u
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
-HOOK="$TESTS_DIR/../../../hooks/check-context-size.sh"
+HOOK="$TESTS_DIR/../hooks/check-context-size.sh"
 
 FAIL=0
 PASS=0
