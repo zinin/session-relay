@@ -19,14 +19,17 @@
 #
 #   - When session context first crosses the per-session STOP threshold
 #     (written by the /do-plan slash command into
-#      ${CLAUDE_PLUGIN_DATA}/state/do-plan-config-<cwd-encoded>-<session>.json):
-#       "ctx:255k STOP threshold=250k - invoke /claude-mesh:pause-after-current-task"
+#      ${XDG_STATE_HOME:-~/.local/state}/session-relay/do-plan-config-<cwd-encoded>-<session>.json):
+#       "ctx:255k STOP threshold=250k - invoke /session-relay:pause-after-current-task"
 #
 # Silent at every other invocation (no context pollution).
 #
-# Source of truth: github.com/zinin/claude-mesh/hooks/check-context-size.sh
-# Wired in:        github.com/zinin/claude-mesh/hooks/hooks.json
-# Reads state from: ${CLAUDE_PLUGIN_DATA:-$GROK_PLUGIN_DATA}/state/
+# Source of truth: github.com/zinin/session-relay/hooks/check-context-size.sh
+# Wired in:        github.com/zinin/session-relay/hooks/hooks.json
+# Reads state from: ${XDG_STATE_HOME:-~/.local/state}/session-relay/ — the directory do-plan
+# writes, computed the same way on every harness. The plugin-data variables Claude Code and
+# Grok export into hooks are ignored: under a --plugin-dir load they named a different
+# directory from the one do-plan wrote, and the STOP threshold silently never fired.
 
 set -euo pipefail
 
@@ -91,12 +94,12 @@ else
     CWD_ENC="unknown"
 fi
 
-STATE_DIR="${CLAUDE_PLUGIN_DATA:-${GROK_PLUGIN_DATA:-$HOME/.claude/plugins/data/claude-mesh-zinin}}/state"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/session-relay"
 mkdir -p "$STATE_DIR"
 
 # ---- Gate: emit ONLY inside the session where /do-plan was started ----
 # /do-plan writes a PER-SESSION config do-plan-config-<cwd>-<session>.json (see
-# commands/do-plan.md Step 2). No file for THIS session → /do-plan never ran here
+# skills/do-plan/SKILL.md Step 2). No file for THIS session → /do-plan never ran here
 # → exit silently (no milestone, no STOP). Keying the config by session (not just
 # cwd) means two concurrent /do-plan runs in one cwd never clobber each other; old
 # per-cwd configs (different filename) are simply ignored. "Silent" = no
@@ -181,9 +184,9 @@ if [ "$STOP_FIRED" = "0" ] \
    && [ "$CONTEXT_SIZE" -ge "$STOP_THRESHOLD" ]; then
     STOP_K=$((STOP_THRESHOLD / 1000))
     if [ -n "$MSG" ]; then
-        MSG="${MSG} STOP threshold=${STOP_K}k - invoke /claude-mesh:pause-after-current-task"
+        MSG="${MSG} STOP threshold=${STOP_K}k - invoke /session-relay:pause-after-current-task"
     else
-        MSG="ctx:${CONTEXT_K}k STOP threshold=${STOP_K}k - invoke /claude-mesh:pause-after-current-task"
+        MSG="ctx:${CONTEXT_K}k STOP threshold=${STOP_K}k - invoke /session-relay:pause-after-current-task"
     fi
     echo "1" > "$STATE_STOP"
 fi

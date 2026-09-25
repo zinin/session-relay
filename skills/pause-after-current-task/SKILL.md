@@ -7,7 +7,7 @@ description: Use when executing a plan via superpowers:subagent-driven-developme
 
 ## Purpose
 
-User signal to the controller running `superpowers:subagent-driven-development`: **finish the current task in full, then stop before the next task starts.** Use this to reach a clean checkpoint before switching to `/claude-mesh:continue-plan-fresh-session`, inspecting intermediate results, or freeing context.
+User signal to the controller running `superpowers:subagent-driven-development`: **finish the current task in full, then stop before the next task starts.** Use this to reach a clean checkpoint before switching to `/session-relay:continue-plan-fresh-session`, inspecting intermediate results, or freeing context.
 
 ## Override Authority
 
@@ -80,7 +80,7 @@ After stopping, output a checkpoint summary. Pick the variant matching your stop
 **Normal completion (States B, C, D — current task closed cleanly):**
 
 ```
-⏸ Пауза по /claude-mesh:pause-after-current-task — текущая задача доделана.
+⏸ Пауза по /session-relay:pause-after-current-task — текущая задача доделана.
 
 Только что закончили:
   Task <N>: <title>
@@ -101,14 +101,14 @@ After stopping, output a checkpoint summary. Pick the variant matching your stop
 
 Что дальше:
   - Проверить промежуточный результат вручную
-  - /claude-mesh:continue-plan-fresh-session — продолжить в новой сессии
+  - /session-relay:continue-plan-fresh-session — продолжить в новой сессии
   - Дать новую инструкцию
 ```
 
 **State A (nothing started):**
 
 ```
-⏸ Пауза по /claude-mesh:pause-after-current-task — выполнение ещё не начато.
+⏸ Пауза по /session-relay:pause-after-current-task — выполнение ещё не начато.
 
 План загружен, ни одна задача не dispatched. Останавливаюсь без действий.
 Прогресс: 0 / N задач выполнено.
@@ -119,7 +119,7 @@ After stopping, output a checkpoint summary. Pick the variant matching your stop
 **State E (between tasks):**
 
 ```
-⏸ Пауза по /claude-mesh:pause-after-current-task — пауза перед следующей задачей.
+⏸ Пауза по /session-relay:pause-after-current-task — пауза перед следующей задачей.
 
 Последняя завершённая задача: Task <N> (<title>)
 Следующая (НЕ начата): Task <N+1> (<title>)
@@ -128,14 +128,14 @@ After stopping, output a checkpoint summary. Pick the variant matching your stop
 
 Что дальше:
   - Проверить промежуточный результат
-  - /claude-mesh:continue-plan-fresh-session
+  - /session-relay:continue-plan-fresh-session
   - Дать новую инструкцию
 ```
 
 **State F (post-loop):**
 
 ```
-⏸ Пауза по /claude-mesh:pause-after-current-task — команда вызвана после завершения per-task loop.
+⏸ Пауза по /session-relay:pause-after-current-task — команда вызвана после завершения per-task loop.
 
 Все запланированные задачи выполнены. Текущая фаза: <final review / finishing-a-development-branch / другое>
 Останавливаюсь, новые стадии не запускаю.
@@ -146,7 +146,7 @@ After stopping, output a checkpoint summary. Pick the variant matching your stop
 **BLOCKED escalation:**
 
 ```
-⏸ Пауза по /claude-mesh:pause-after-current-task — текущая задача в состоянии BLOCKED.
+⏸ Пауза по /session-relay:pause-after-current-task — текущая задача в состоянии BLOCKED.
 
 Task <N>: <title>
 Implementer статус: BLOCKED
@@ -161,7 +161,7 @@ Implementer статус: BLOCKED
 |---|---|
 | "Skip the spec review — user wants to stop fast" | "Finish the current task" includes both reviews. A skipped review is not a checkpoint, it's hidden tech debt. |
 | "Skip the re-review after the fix" | The review loop IS the task. An unreviewed fix is not done. |
-| "Auto-start the next task because it's small" | No. The whole point of this command is to stop *before* the next task. |
+| "Auto-start the next task because it's small" | No. The whole point of this skill is to stop *before* the next task. |
 | "Auto-start the final full-implementation reviewer — the current task is the last one" | No. Final review is a separate phase, not part of the current task. |
 | "User typed pause, so I should freeze mid-review" | No. Pause is graceful — drive the current task to a clean checkpoint, *then* stop. |
 | "Mark the task complete even though the code reviewer has open issues" | No. Mark complete only after both reviews are ✅. |

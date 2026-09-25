@@ -1,13 +1,13 @@
 ---
 name: continue-plan-fresh-session
-description: Generate a prompt for continuing plan execution in a fresh Claude Code session
+description: Generate a prompt for continuing plan execution in a fresh agent session
 ---
 
 # Continue Plan in Fresh Session
 
 ## Task
 
-Generate a prompt for continuing the current plan execution in a new, clean Claude Code session.
+Generate a prompt for continuing the current plan execution in a new, clean agent session.
 
 ## When to Use
 
@@ -160,5 +160,5 @@ Do NOT silently work around plan issues or make significant deviations without u
    Prompt saved: continuation prompt for <feature name> — <done> of <total> tasks complete
      relative: docs/superpowers/plans/YYYY-MM-DD-<topic>-continuation-prompt.md
      absolute: <realpath of that file>
-   Open a fresh Claude Code session and hand it this file.
+   Open a fresh agent session and hand it this file.
    ```

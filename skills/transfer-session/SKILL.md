@@ -1,13 +1,13 @@
 ---
 name: transfer-session
-description: Generate a prompt for transferring context to a fresh Claude Code session
+description: Generate a prompt for transferring context to a fresh agent session
 ---
 
 # Transfer Session Context
 
 ## Task
 
-Generate a complete prompt for continuing the current work in a new, clean Claude Code session. This is a universal command — works for any situation, not just plan execution.
+Generate a complete prompt for continuing the current work in a new, clean agent session. This is a universal command — works for any situation, not just plan execution.
 
 ## When to Use
 
@@ -145,7 +145,7 @@ Read these files first to understand the context:
    Prompt saved: session transfer — <one line: what the work is about>
      relative: docs/session-transfer-YYYY-MM-DD-HHMMSS.md
      absolute: <realpath of that file>
-   Open a fresh Claude Code session and hand it this file.
+   Open a fresh agent session and hand it this file.
    ```
 
    `absolute` is `realpath <file>`.
