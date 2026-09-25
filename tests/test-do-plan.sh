@@ -131,7 +131,9 @@ TRANSCRIPT="$T/sid-42.jsonl"
 jq -nc '{type:"assistant",message:{usage:{input_tokens:410000,cache_creation_input_tokens:0,cache_read_input_tokens:0}}}' > "$TRANSCRIPT"
 STDIN="$(jq -nc --arg t "$TRANSCRIPT" --arg c "$T/proj" '{transcript_path:$t,cwd:$c,hook_event_name:"PostToolUse",session_id:"sid-42"}')"
 HOUT="$(printf '%s' "$STDIN" | env -u CLAUDE_PLUGIN_DATA -u GROK_PLUGIN_DATA XDG_STATE_HOME="$T/st" bash "$HOOK" 2>/dev/null)"
-assert_has "the hook fires STOP from the file Step 2 wrote" "STOP threshold=400k" "$HOUT"echo "== hooks.json: Claude Code path unchanged =="
+assert_has "the hook fires STOP from the file Step 2 wrote" "STOP threshold=400k" "$HOUT"
+
+echo "== hooks.json: Claude Code path unchanged =="
 assert_ge "still registers PostToolUse" "1" "$(grep -c '"PostToolUse"' "$HOOKS" || true)"
 if grep -Fq '"PreToolUse"' "$HOOKS"; then
     FAIL=$((FAIL+1)); echo "  FAIL: hooks.json must not register PreToolUse (Claude Code uses PostToolUse; Grok STOP is signals.json)"
