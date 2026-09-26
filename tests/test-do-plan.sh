@@ -112,6 +112,44 @@ OUT="$(cd "$T" && env -u GROK_SESSION_ID CLAUDECODE=1 CLAUDE_PLUGIN_ROOT="$REPO"
 assert_eq "no config file → defaults, rc 0" "0" "$RC"
 assert_has "…threshold 400000" "DEFAULT_STOP=400000" "$OUT"
 
+echo "== /do-plan: Grok window check =="
+WINDOW_CHECK="$(fence '### On Grok: compare the threshold with the context window')"
+assert_ge "window-check fence extracted" "8" "$(printf '%s\n' "$WINDOW_CHECK" | grep -c .)"
+# Runs the fence for threshold $1 and window $2 (empty = unknown) and names the case it lands in:
+# "silent"; "floor C/W" (auto-compact at C is at or below the 150000 floor); "compact C/W S=n"
+# (the threshold is at or above auto-compact; n is the suggested threshold). A non-zero exit, a
+# second line or stray stderr comes back as it is and fails the comparison.
+window_case() {
+    local out rc cw s
+    out="$(bash -c "$(printf '%s\n' "$WINDOW_CHECK" | sed "s/<THRESHOLD>/$1/g; s/<CONTEXT_WINDOW>/$2/g")" 2>&1)"; rc=$?
+    [ "$rc" -eq 0 ] || { echo "rc $rc: $out"; return; }
+    [ -n "$out" ] || { echo "silent"; return; }
+    case "$out" in *$'\n'*) echo "several lines: $out"; return ;; esac
+    cw="$(printf '%s\n' "$out" | sed -n 's|.*(\([0-9]*\) из \([0-9]*\)).*|\1/\2|p')"
+    s="$(printf '%s\n' "$out" | sed -n 's|.*/session-relay:do-plan \([0-9]*\).*|\1|p')"
+    case "$out" in
+        "ВНИМАНИЕ: "*"ни при каком допустимом пороге"*) echo "floor $cw" ;;
+        "ВНИМАНИЕ: порог $1 не ниже 85% окна"*) echo "compact $cw S=$s" ;;
+        *) echo "unexpected: $out" ;;
+    esac
+}
+assert_eq "W=204800 T=400000 (DKS-Ultra): past auto-compact, suggests 163000" \
+    "compact 174080/204800 S=163000" "$(window_case 400000 204800)"
+assert_eq "W=500000 T=400000: below auto-compact at 425000 → silent" \
+    "silent" "$(window_case 400000 500000)"
+assert_eq "W=500000 T=450000: past auto-compact, suggests 400000" \
+    "compact 425000/500000 S=400000" "$(window_case 450000 500000)"
+assert_eq "W=170000: auto-compact at 144500 is under the 150000 floor" \
+    "floor 144500/170000" "$(window_case 400000 170000)"
+assert_eq "empty W (window unknown) → silent" "silent" "$(window_case 400000 '')"
+# Boundaries the examples above do not reach: T equal to C, C equal to 150000, S clamped.
+assert_eq "T exactly at auto-compact warns too" \
+    "compact 425000/500000 S=400000" "$(window_case 425000 500000)"
+assert_eq "auto-compact exactly at 150000 is the floor case" \
+    "floor 150000/176471" "$(window_case 400000 176471)"
+assert_eq "the suggestion never goes below 150000" \
+    "compact 153000/180000 S=150000" "$(window_case 400000 180000)"
+
 echo "== /do-plan Step 2 writes the per-session file under XDG_STATE_HOME =="
 STEP2="$(fence '## Step 2' | sed 's/<THRESHOLD>/400000/')"
 assert_ge "Step 2 fence extracted" "10" "$(printf '%s\n' "$STEP2" | grep -c .)"

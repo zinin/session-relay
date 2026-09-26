@@ -16,6 +16,7 @@ All notable changes to session-relay will be documented here.
   every harness. Under a `--plugin-dir` load the hook used to read another plugin-data
   directory than the one do-plan wrote, and STOP never fired.
 - **do-plan refuses to start without a context signal** (Codex, a bare terminal), and on Grok
-  warns when the threshold is not below the model's context window.
+  warns when the threshold is at or above 85% of the model's context window: auto-compact comes
+  first, so STOP never fires. The threshold it suggests instead is never below 150000.
 - **do-plan's end-of-plan review offer** names `/herdr-review:review` or the mesh-review plugin,
   whichever is there, instead of `/claude-mesh:code-review-fresh-session`.

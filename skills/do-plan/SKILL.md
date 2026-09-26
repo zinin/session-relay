@@ -129,13 +129,26 @@ Do not invoke any skill, do not write the config file, do not start execution.
 
 ### On Grok: compare the threshold with the context window
 
-When Step 1 printed a number after `CONTEXT_WINDOW=` and the resolved threshold is **not below** it, the threshold can never be reached: Grok compacts the conversation before the count gets there, so STOP would never fire. Output this one line, then continue:
+Grok auto-compacts the conversation at 85% of the model's context window (its default; see Step 6), so the count never reaches a threshold at or above that point and STOP would never fire. When that 85% is itself at or below the 150000 floor, no allowed threshold can fire.
 
-```
-ВНИМАНИЕ: порог <THRESHOLD> не меньше окна контекста модели <CONTEXT_WINDOW> — STOP не сработает. Задайте порог меньше окна, например /session-relay:do-plan <CONTEXT_WINDOW × 0.7, rounded down to thousands>.
+On Grok, once the threshold is resolved and has passed the 150000 check above, run this with `<THRESHOLD>` replaced by that integer and `<CONTEXT_WINDOW>` by the number Step 1 printed after `CONTEXT_WINDOW=`. When Step 1 printed nothing there (no `signals.json` yet, or no such field), the window is unknown: replace the placeholder with nothing, and the fence says nothing.
+
+```bash
+THRESHOLD=<THRESHOLD>
+WINDOW=<CONTEXT_WINDOW>
+# No whole number: the window is unknown, so there is nothing to compare.
+case "$WINDOW" in ''|*[!0-9]*) exit 0 ;; esac
+COMPACT_AT=$((WINDOW * 85 / 100))   # where Grok auto-compacts
+if [ "$COMPACT_AT" -le 150000 ]; then
+    echo "ВНИМАНИЕ: на этой модели Grok сжимает контекст на 85% окна ($COMPACT_AT из $WINDOW), а это не выше минимального порога 150000 — STOP не сработает ни при каком допустимом пороге. Выберите модель с окном побольше или выполняйте план без паузы по контексту."
+elif [ "$THRESHOLD" -ge "$COMPACT_AT" ]; then
+    SUGGESTED=$((WINDOW * 8 / 10000 * 1000))          # 80% of the window, rounded down to thousands,
+    [ "$SUGGESTED" -ge 150000 ] || SUGGESTED=150000   # but never below the floor
+    echo "ВНИМАНИЕ: порог $THRESHOLD не ниже 85% окна контекста модели ($COMPACT_AT из $WINDOW) — Grok сожмёт контекст раньше, STOP не сработает. Задайте порог меньше, например /session-relay:do-plan $SUGGESTED."
+fi
 ```
 
-An empty `CONTEXT_WINDOW=` (no `signals.json` yet, or no such field) means the window is unknown: say nothing. Claude Code prints no window at all; skip this check there.
+Its output is one `ВНИМАНИЕ:` line or nothing. Show the line to the user verbatim, then continue: it is a warning, not a reason to stop. Claude Code prints no window at all; skip this check there.
 
 ## Step 2 — Write per-session config file
 
