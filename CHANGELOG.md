@@ -18,5 +18,8 @@ All notable changes to session-relay will be documented here.
 - **do-plan refuses to start without a context signal** (Codex, a bare terminal), and on Grok
   warns when the threshold is at or above 85% of the model's context window: auto-compact comes
   first, so STOP never fires. The threshold it suggests instead is never below 150000.
+- **On Grok, do-plan's window check runs once `signals.json` exists.** Grok writes it when a
+  turn ends, so a session's first turn has no window to check; the check runs at the first task
+  checkpoint that finds the file. The STOP poll's count is as of the last finished turn.
 - **do-plan's end-of-plan review offer** names `/herdr-review:review` or the mesh-review plugin,
   whichever is there, instead of `/claude-mesh:code-review-fresh-session`.
