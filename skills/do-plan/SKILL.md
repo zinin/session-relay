@@ -100,7 +100,7 @@ fi
 
 A missing config file is not an error — the defaults apply. Any mistake in an existing file (an unknown or repeated key, `stop_tokens` that is not a whole number or is below 150000, a `dispatch_model` outside `[A-Za-z0-9._:@-]`) stops here with `<file>:<line>: <reason>`. Do NOT regress this to a silent default: a typo would move the STOP threshold without anyone noticing.
 
-On Grok, `CONTEXT_SIGNALS=` and `CONTEXT_WINDOW=` are empty on a session's first turn: Grok writes `signals.json` when a turn ends. Step 6's snippet re-globs the file at each task checkpoint; at the first one that finds it, run the window check below with its `contextWindowTokens`.
+On Grok, `CONTEXT_SIGNALS=` and `CONTEXT_WINDOW=` are empty on a session's first turn: Grok writes `signals.json` when a turn ends. Step 6's snippet re-globs the file at each task checkpoint; at the first one that finds it, run the window check below with the `CONTEXT_WINDOW=` value that snippet prints.
 
 ### Parse the argument
 
@@ -133,7 +133,7 @@ Do not invoke any skill, do not write the config file, do not start execution.
 
 Grok auto-compacts the conversation at 85% of the model's context window (its default; see Step 6), so the count never reaches a threshold at or above that point and STOP would never fire. When that 85% is itself at or below the 150000 floor, no allowed threshold can fire.
 
-On Grok, once the threshold is resolved and has passed the 150000 check above, run this with `<THRESHOLD>` replaced by that integer and `<CONTEXT_WINDOW>` by the number Step 1 printed after `CONTEXT_WINDOW=`. When Step 1 printed nothing there (no `signals.json` yet, or no such field), the window is unknown: replace the placeholder with nothing, and the fence says nothing.
+On Grok, once the threshold is resolved and has passed the 150000 check above, run this with `<THRESHOLD>` replaced by that integer and `<CONTEXT_WINDOW>` by the number printed after `CONTEXT_WINDOW=` — by Step 1, or later by the first Step 6 checkpoint that found `signals.json`. When Step 1 printed nothing there (no `signals.json` yet, or no such field), the window is unknown: replace the placeholder with nothing, and the fence says nothing.
 
 ```bash
 THRESHOLD=<THRESHOLD>
@@ -269,7 +269,7 @@ ctx:<N>k STOP threshold=<T>k - invoke /session-relay:pause-after-current-task
 
 When you see this, follow **On STOP** below.
 
-The STOP signal fires exactly once per session. If it has already fired and you somehow missed it, check that the hook's STOP-marker file (`~/.local/state/session-relay/context-stop-<session>.txt`) exists — but in normal flow, just trust the first reminder.
+The STOP signal fires exactly once per session. If it has already fired and you somehow missed it, check that the hook's STOP-marker file (`${XDG_STATE_HOME:-~/.local/state}/session-relay/context-stop-<session>.txt`) exists — but in normal flow, just trust the first reminder.
 
 ### Grok — poll `signals.json` (primary)
 
@@ -292,6 +292,8 @@ if [ -z "$CONTEXT_SIGNALS" ]; then
 fi
 VAL=$(jq -r '.contextTokensUsed // empty' "$CONTEXT_SIGNALS")
 echo "CONTEXT_USED=${VAL}"
+WIN=$(jq -r '.contextWindowTokens // empty' "$CONTEXT_SIGNALS")
+echo "CONTEXT_WINDOW=${WIN}"
 ```
 
 Compare the integer after `CONTEXT_USED=` to the STOP threshold from Step 1. If `>=` threshold, follow **On STOP** below. If the file is missing or the field is empty, the snippet prints one WARN on stderr and `CONTEXT_USED=` — keep going, do not invent a count.
