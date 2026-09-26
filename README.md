@@ -11,8 +11,8 @@ and Grok, installable in Codex. Split out of claude-mesh 0.15.0.
   context crosses the STOP threshold: `stop_tokens` from the config (default 400000), or the
   argument for one run (`300k`, `400000`). Claude Code gets the signal from this plugin's
   `PostToolUse` hook, Grok from the session's `signals.json`; on Grok, do-plan also warns when
-  the threshold is not below the model's context window. Where neither signal exists — Codex,
-  a bare terminal — do-plan refuses to start.
+  the threshold is not below 85% of the model's context window (Grok compacts there first).
+  Where neither signal exists — Codex, a bare terminal — do-plan refuses to start.
 - **`/session-relay:pause-after-current-task`** — finish the current task in full (spec review,
   code review, fixes), then stop before the next one.
 - **`/session-relay:continue-plan-fresh-session`**, **`/session-relay:exec-plan-fresh-session`**,

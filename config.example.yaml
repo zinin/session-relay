@@ -6,8 +6,8 @@
 
 # STOP threshold for /session-relay:do-plan, in tokens: a whole number, at least 150000
 # (the context hook emits nothing below 150k). An argument — /session-relay:do-plan 300k —
-# overrides it for one run. Keep it below your model's context window; on Grok, do-plan
-# warns when it is not.
+# overrides it for one run. Keep it below 85% of your model's context window (Grok
+# compacts there first); on Grok, do-plan warns when it is not.
 stop_tokens: 400000
 
 # Model for do-plan's subagents. Leave it out to inherit the session model. On Grok the
