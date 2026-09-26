@@ -165,12 +165,15 @@ echo "== the hook reads the directory Step 2 wrote =="
 HOOK_DIR_LINE="$(grep -E '^STATE_DIR=' "$HOOK")"
 HOOK_DIR="$(XDG_STATE_HOME="$T/st" bash -c "$HOOK_DIR_LINE"$'\n''printf %s "$STATE_DIR"')"
 assert_eq "the hook reads the same directory" "$T/st/session-relay" "$HOOK_DIR"
+assert_eq "hook and Step 2 share one STATE_DIR line (default branch too)" \
+    "$(printf '%s\n' "$STEP2" | grep -E '^STATE_DIR=')" "$HOOK_DIR_LINE"
 # End to end: a transcript over the threshold makes the hook say STOP for this session.
 TRANSCRIPT="$T/sid-42.jsonl"
 jq -nc '{type:"assistant",message:{usage:{input_tokens:410000,cache_creation_input_tokens:0,cache_read_input_tokens:0}}}' > "$TRANSCRIPT"
 STDIN="$(jq -nc --arg t "$TRANSCRIPT" --arg c "$T/proj" '{transcript_path:$t,cwd:$c,hook_event_name:"PostToolUse",session_id:"sid-42"}')"
 HOUT="$(printf '%s' "$STDIN" | env -u CLAUDE_PLUGIN_DATA -u GROK_PLUGIN_DATA XDG_STATE_HOME="$T/st" bash "$HOOK" 2>/dev/null)"
 assert_has "the hook fires STOP from the file Step 2 wrote" "STOP threshold=400k" "$HOUT"
+assert_has "…and names the pause skill" "invoke /session-relay:pause-after-current-task" "$HOUT"
 
 echo "== hooks.json: Claude Code path unchanged =="
 assert_ge "still registers PostToolUse" "1" "$(grep -c '"PostToolUse"' "$HOOKS" || true)"

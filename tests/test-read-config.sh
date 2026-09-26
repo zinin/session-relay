@@ -50,6 +50,9 @@ assert_contains "…names line 2" "$T/config.yaml:2" "$ERR"
 run $'stop_token: 400000\n' get stop_tokens
 assert_eq "a typo'd key → rc 1" "1" "$RC"
 assert_contains "…says unknown key" "unknown key 'stop_token'" "$ERR"
+assert_contains "…names the file and line" "$T/config.yaml:1" "$ERR"
+run $'stop_tokens: 150000\n' get stop_tokens
+assert_eq "150000, the floor itself, is accepted" "150000" "$OUT"
 run $'stop_tokens: 400000\nstop_tokens: 300000\n' get stop_tokens
 assert_eq "a duplicate key → rc 1" "1" "$RC"
 assert_contains "…says duplicate" "duplicate key 'stop_tokens'" "$ERR"
@@ -67,11 +70,15 @@ OUT="$(XDG_CONFIG_HOME="$T/xdg" python3 "$READ" get stop_tokens)"
 assert_eq "reads \$XDG_CONFIG_HOME/session-relay/config.yaml" "250000" "$OUT"
 OUT="$(env -u XDG_CONFIG_HOME HOME="$T/nohome" python3 "$READ" get stop_tokens)"
 assert_eq "no XDG, no file under HOME → default" "400000" "$OUT"
+mkdir -p "$T/home/.config/session-relay"; printf 'stop_tokens: 260000\n' > "$T/home/.config/session-relay/config.yaml"
+OUT="$(env -u XDG_CONFIG_HOME HOME="$T/home" python3 "$READ" get stop_tokens)"
+assert_eq "no XDG → reads \$HOME/.config/session-relay/config.yaml" "260000" "$OUT"
 OUT="$(XDG_CONFIG_HOME="$T/xdg" python3 "$READ" path)"
 assert_eq "path prints the file it reads" "$T/xdg/session-relay/config.yaml" "$OUT"
 
 echo "=== the shipped example parses ==="
 EXAMPLE="$TESTS_DIR/../config.example.yaml"
+assert_eq "config.example.yaml ships" "yes" "$([ -f "$EXAMPLE" ] && echo yes)"
 OUT="$(python3 "$READ" --file "$EXAMPLE" get stop_tokens)"; assert_eq "config.example.yaml: stop_tokens" "400000" "$OUT"
 OUT="$(python3 "$READ" --file "$EXAMPLE" get dispatch_model)"; assert_eq "config.example.yaml: dispatch_model left out" "" "$OUT"
 
