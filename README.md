@@ -47,6 +47,10 @@ codex plugin add session-relay@zinin
 Codex gets the prompt generators and `pause-after-current-task`. `do-plan` refuses to start
 there: Codex tells a session nothing about how full its context is.
 
+Smoke-tested in `codex exec` 0.157: the generators wrote their files in a trusted folder or with
+`-s workspace-write` (an untrusted folder gets a read-only sandbox); pause-after-current-task and
+do-plan's refusal worked as described.
+
 ## Configure
 
 Optional. `~/.config/session-relay/config.yaml` (`$XDG_CONFIG_HOME/session-relay/config.yaml`
