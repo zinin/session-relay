@@ -8,7 +8,10 @@ This file is for work inside this repository. It is not a plugin component.
   (`claude plugin disable session-relay@zinin`), then `claude --plugin-dir "$PWD"`; re-enable it
   afterwards.
 - **Grok** has no `--plugin-dir` in interactive mode: `grok plugin install "$PWD" --trust`
-  copies a snapshot to `~/.grok/installed-plugins/session-relay-<hash>`. After a change,
+  copies a snapshot to `~/.grok/installed-plugins/session-relay-<hash>`. Grok names the
+  snapshot after the source directory, so install from a directory named `session-relay`:
+  do-plan finds its `read-config.py` under `installed-plugins` by that name and would otherwise
+  fall back to the marketplace copy. After a change,
   `grok plugin uninstall session-relay --confirm` and install again, then start a new session.
   Keep exactly one snapshot: `ls -d ~/.grok/installed-plugins/session-relay-*` lists one entry.
 
