@@ -10,9 +10,12 @@ and Grok, installable in Codex. Split out of claude-mesh 0.15.0.
   `superpowers:subagent-driven-development` and pause at a clean checkpoint once the session
   context crosses the STOP threshold: `stop_tokens` from the config (default 400000), or the
   argument for one run (`300k`, `400000`). Claude Code gets the signal from this plugin's
-  `PostToolUse` hook, Grok from the session's `signals.json`. On Grok, STOP fires only when a
-  turn ends (that is when Grok writes `signals.json`), and do-plan also warns when the threshold
-  is not below 85% of the model's context window (Grok compacts there first).
+  `PostToolUse` hook, Grok from the session's `signals.json`, which Grok rewrites only when a
+  turn ends. On Grok do-plan therefore sees the count as of the last finished turn: a run that
+  stays in one turn — the usual case — does not pause (if it grows that far, Grok's auto-compact
+  at 85% of the window comes first), and a fresh session's first turn has no count at all. Once
+  `signals.json` exists, do-plan also warns when the threshold is not below 85% of the model's
+  context window.
   Where neither signal exists — Codex, a bare terminal — do-plan refuses to start.
 - **`/session-relay:pause-after-current-task`** — finish the current task in full (spec review,
   code review, fixes), then stop before the next one.
@@ -71,6 +74,14 @@ The state — the per-session threshold do-plan writes and the hook's markers �
 `runtime.do_plan_default_stop_tokens` and `runtime.dispatch_model` in the claude-mesh config are
 not read here. The default threshold was 250000 there and is 400000 here; set `stop_tokens`
 for the old value, and `dispatch_model` if you had one.
+
+## Grok follow-up
+
+do-plan's STOP on Grok reads `signals.json`, which Grok 1.0.41 writes only when a turn ends. The
+session's `updates.jsonl` gains `_meta.totalTokens` on every update, mid-turn; in the 2026-09-26
+smoke its last value equalled `signals.json`'s `contextTokensUsed` at turn end. Reading the last
+`_meta.totalTokens` in do-plan's Step 6 poll and window check, with `signals.json` as the fallback,
+would let STOP fire inside one turn. Tracked for a separate change.
 
 ## Tests
 

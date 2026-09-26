@@ -20,6 +20,8 @@ All notable changes to session-relay will be documented here.
   first, so STOP never fires. The threshold it suggests instead is never below 150000.
 - **On Grok, do-plan's window check runs once `signals.json` exists.** Grok writes it when a
   turn ends, so a session's first turn has no window to check; the check runs at the first task
-  checkpoint that finds the file. The STOP poll's count is as of the last finished turn.
+  checkpoint that finds the file. The STOP poll's count is as of the last finished turn, so a
+  run that stays in one turn does not pause on Grok (a live count is a follow-up — README,
+  "Grok follow-up").
 - **do-plan's end-of-plan review offer** names `/herdr-review:review` or the mesh-review plugin,
   whichever is there, instead of `/claude-mesh:code-review-fresh-session`.

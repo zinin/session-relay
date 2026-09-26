@@ -207,6 +207,8 @@ Output a single status line so the user knows the threshold took effect, e.g.:
 
 Substitute the resolved model: print `Dispatch model = <DISPATCH_MODEL>` when it is non-empty, or `Dispatch model = session-inherited` when `DISPATCH_MODEL` is empty.
 
+On Grok, print a second line: `On Grok the context count is as of the last finished turn (signals.json) and does not grow during this run: a run that stays in one turn does not pause, and Grok auto-compacts at 85% of the window first.`
+
 No long preamble.
 
 ## Step 4 — Invoke the executor

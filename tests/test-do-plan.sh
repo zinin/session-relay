@@ -83,6 +83,7 @@ assert_contains "poll snippet WARNs when signals.json is missing" 'signals.json 
 assert_contains "missing list-host-models.sh is a distinct warning" 'list-host-models.sh не найден' "$CMD"
 assert_contains "Step 1 reads the Grok context window" 'contextWindowTokens' "$CMD"
 assert_contains "the window warning says STOP will not fire" 'STOP не сработает' "$CMD"
+assert_contains "Step 3 warns a Grok user" 'does not grow during this run' "$CMD"
 
 echo "== /do-plan: session-relay owns its config and state =="
 assert_eq "no mesh config-loader anywhere" "0" "$(grep -c 'config-loader' "$CMD" || true)"
