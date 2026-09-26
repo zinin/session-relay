@@ -18,7 +18,7 @@
 #       "ctx:175k"
 #
 #   - When session context first crosses the per-session STOP threshold
-#     (written by the /do-plan slash command into
+#     (written by the /session-relay:do-plan skill into
 #      ${XDG_STATE_HOME:-~/.local/state}/session-relay/do-plan-config-<cwd-encoded>-<session>.json):
 #       "ctx:255k STOP threshold=250k - invoke /session-relay:pause-after-current-task"
 #

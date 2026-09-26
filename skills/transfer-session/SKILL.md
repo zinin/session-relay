@@ -7,7 +7,7 @@ description: Generate a prompt for transferring context to a fresh agent session
 
 ## Task
 
-Generate a complete prompt for continuing the current work in a new, clean agent session. This is a universal command — works for any situation, not just plan execution.
+Generate a complete prompt for continuing the current work in a new, clean agent session. This is a universal skill — works for any situation, not just plan execution.
 
 ## When to Use
 

@@ -11,7 +11,7 @@ User signal to the controller running `superpowers:subagent-driven-development`:
 
 ## Override Authority
 
-The `superpowers:subagent-driven-development` skill mandates continuous execution between tasks ("Do not pause to check in with your human partner between tasks"). **This command is the user's explicit authorization to break that rule** at one specific point — after the current task is fully closed. Treat it as user consent. Do not argue. Do not ask the user "are you sure".
+The `superpowers:subagent-driven-development` skill mandates continuous execution between tasks ("Do not pause to check in with your human partner between tasks"). **Invoking this skill is the user's explicit authorization to break that rule** at one specific point — after the current task is fully closed. Treat it as user consent. Do not argue. Do not ask the user "are you sure".
 
 ## What "Current Task" Means
 
@@ -135,7 +135,7 @@ After stopping, output a checkpoint summary. Pick the variant matching your stop
 **State F (post-loop):**
 
 ```
-⏸ Пауза по /session-relay:pause-after-current-task — команда вызвана после завершения per-task loop.
+⏸ Пауза по /session-relay:pause-after-current-task — скилл вызван после завершения per-task loop.
 
 Все запланированные задачи выполнены. Текущая фаза: <final review / finishing-a-development-branch / другое>
 Останавливаюсь, новые стадии не запускаю.
@@ -166,7 +166,7 @@ Implementer статус: BLOCKED
 | "User typed pause, so I should freeze mid-review" | No. Pause is graceful — drive the current task to a clean checkpoint, *then* stop. |
 | "Mark the task complete even though the code reviewer has open issues" | No. Mark complete only after both reviews are ✅. |
 | "User is in a hurry, I'll skip the report" | The report IS the user's checkpoint summary — it's why they paused. Always output. |
-| "Ask the user to confirm before stopping" | No. The command itself is the consent. Confirming wastes context — exactly what they're trying to free. |
+| "Ask the user to confirm before stopping" | No. Invoking the skill is the consent. Confirming wastes context — exactly what they're trying to free. |
 
 ## Bottom Line
 
