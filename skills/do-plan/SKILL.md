@@ -100,6 +100,8 @@ fi
 
 A missing config file is not an error — the defaults apply. Any mistake in an existing file (an unknown or repeated key, `stop_tokens` that is not a whole number or is below 150000, a `dispatch_model` outside `[A-Za-z0-9._:@-]`) stops here with `<file>:<line>: <reason>`. Do NOT regress this to a silent default: a typo would move the STOP threshold without anyone noticing.
 
+On Grok, `CONTEXT_SIGNALS=` and `CONTEXT_WINDOW=` are empty on a session's first turn: Grok writes `signals.json` when a turn ends. Step 6's snippet re-globs the file at each task checkpoint; at the first one that finds it, run the window check below with its `contextWindowTokens`.
+
 ### Parse the argument
 
 The argument is the text after the skill name in the invocation (Claude Code appends it as `ARGUMENTS:`; Grok and Codex pass it in the message). It is the STOP threshold in tokens. Accepted formats:
@@ -271,7 +273,7 @@ The STOP signal fires exactly once per session. If it has already fired and you 
 
 The harness knows the window (status line, `/session-info`, `/context`). **You do not:** those surfaces are not in the model context. The 0.14.x `PostToolUse` hook also does not deliver `ctx:…` here (Grok ignores that stdout). Do not wait for a hook reminder.
 
-After each task reaches a clean checkpoint, **before dispatching the next task**, read the live count. Substitute the `CONTEXT_SIGNALS=` path echoed in Step 1 (a shell variable does not survive between Bash calls). If that echo was empty, re-glob:
+After each task reaches a clean checkpoint, **before dispatching the next task**, read the count. It is as of the last finished turn: Grok writes `signals.json` when a turn ends. Substitute the `CONTEXT_SIGNALS=` path echoed in Step 1 (a shell variable does not survive between Bash calls). If that echo was empty, re-glob:
 
 ```bash
 grok_home="${GROK_HOME:-$HOME/.grok}"
