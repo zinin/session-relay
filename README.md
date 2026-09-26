@@ -24,7 +24,8 @@ and Grok, installable in Codex. Split out of claude-mesh 0.15.0.
   carries any work over, in a fresh session. The prompt goes to a file under `docs/`; the chat
   gets only its path.
 
-`do-plan` needs the [superpowers](https://github.com/obra/superpowers) plugin.
+`do-plan` needs the [superpowers](https://github.com/obra/superpowers) plugin, `python3` (its
+config reader) and `jq` (its state file and the context hook).
 
 ## Install
 
