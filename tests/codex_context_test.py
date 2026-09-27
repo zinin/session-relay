@@ -227,6 +227,46 @@ class CodexContext(unittest.TestCase):
         self.assertIn("telemetry unavailable", self.hook())
         self.assertEqual(self.hook(), "")
 
+    def test_malformed_usage_warns_once_and_requires_pause_until_recovery(self):
+        run = self.start()
+        valid = {"input_tokens": 139900, "output_tokens": 100, "total_tokens": 140000}
+        cases = []
+        for field in valid:
+            cases.append((f"missing {field}", {k: v for k, v in valid.items() if k != field}))
+            for value in (None, True, "100", 100.0, -1):
+                cases.append((f"{field}={value!r}", dict(valid, **{field: value})))
+        cases.extend([
+            ("inconsistent total", dict(valid, total_tokens=1)),
+            ("zero input with output", {"input_tokens": 0, "output_tokens": 100, "total_tokens": 100}),
+            ("malformed estimate", {"input_tokens": 0, "output_tokens": 0, "total_tokens": "5000"}),
+        ])
+        for label, usage in cases:
+            with self.subTest(label=label):
+                self.write(140000, last_token_usage=usage)
+                self.assertIn("telemetry unavailable", self.hook())
+                self.assertEqual(self.hook(), "")
+                self.assertTrue(self.cli("check", run)["pause_required"])
+                self.write(140000)
+                self.assertEqual(self.hook(), "")
+                self.assertFalse(self.cli("check", run)["pause_required"])
+
+    def test_compaction_estimates_stay_silent_until_measured_usage(self):
+        run = self.start()
+        for total in (0, 5000):
+            with self.subTest(total=total):
+                self.hook("PreCompact")
+                self.rows.append(self.record("compacted", {}))
+                self.rows.append(self.usage(total, last_token_usage={
+                    "input_tokens": 0, "output_tokens": 0, "total_tokens": total}))
+                self.flush()
+                self.assertEqual(self.hook("PostCompact"), "")
+                self.assertEqual(self.hook(), "")
+                self.assertTrue(self.cli("check", run)["pause_required"])
+                self.rows.append(self.usage(10000))
+                self.flush()
+                self.assertEqual(self.hook(), "")
+                self.assertFalse(self.cli("check", run)["pause_required"])
+
     def test_partial_line_null_info_and_cached_tokens(self):
         run = self.start()
         self.rows.append(self.record("event_msg", {"type": "token_count", "info": None})); self.flush()

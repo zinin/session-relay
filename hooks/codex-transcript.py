@@ -135,8 +135,14 @@ def read_usage(path, session_id, model, turn_id, invalidated_after=0):
         raise Unavailable("unrecognized last_token_usage")
     usage = info["last_token_usage"]
     inputs, outputs, total = (usage.get(k) for k in ("input_tokens", "output_tokens", "total_tokens"))
-    if not all(integer(v) for v in (inputs, outputs, total)) or inputs == 0 or total != inputs + outputs:
-        raise Pending("usage is an estimate or unrecognized; waiting for real model usage")
+    if not all(integer(v) for v in (inputs, outputs, total)):
+        raise Unavailable("unrecognized last_token_usage: expected non-negative integer counts")
+    # Codex's local compaction estimate sets input/output to zero and stores
+    # the estimated size in total_tokens until a real model request completes.
+    if inputs == 0 and outputs == 0:
+        raise Pending("usage is an estimate; waiting for real model usage")
+    if inputs == 0 or total != inputs + outputs:
+        raise Unavailable("inconsistent last_token_usage: expected positive input and total = input + output")
     window = info.get("model_context_window")
     if not integer(window) or window == 0:
         raise Unavailable("model context window unavailable")

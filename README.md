@@ -80,11 +80,11 @@ The adapter currently accepts **CLI 0.157.1** rollout JSONL. It reads
 last completed model request, including cached input once; lifetime
 `total_token_usage` and child usage are not the context counter. Hooks receive no
 `thread/tokenUsage/updated` subscription. The transcript format is unstable, so
-other CLI versions fail explicitly pending verification. After a Codex update,
-do-plan refuses with `unverified Codex transcript version` until a session-relay
-release verifies the new format; use CLI 0.157.1 for do-plan meanwhile. The version
-comes from the rollout's `session_meta`, i.e. the CLI that created the session: run
-do-plan in a session started by 0.157.1, not one resumed across CLI versions.
+versions other than 0.157.1 in `session_meta.cli_version` fail with
+`unverified Codex transcript version`. This field records the CLI that created the
+session; the adapter does not verify the currently running executable. Resuming an
+old session with a newer CLI is not detected by this gate and remains unsupported.
+Use CLI 0.157.1 both to create the session and to run do-plan.
 
 There is a request/flush delay: a first hook can have no count, and tool results
 not yet sent to the model are not counted. Startup retries across model responses;

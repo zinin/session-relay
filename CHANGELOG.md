@@ -9,7 +9,8 @@ All notable changes to session-relay will be documented here.
   `hooks/codex-hooks.json`, whose parent hook reads the last completed request's usage from the
   session's rollout. Startup waits for the parent hook's receipt (trust the hooks in `/hooks`),
   STOP survives compaction and fires once per run, `dispatch_model` is ignored on Codex
-  (subagents inherit the session model), and other CLI versions refuse until verified.
+  (subagents inherit the session model), and unverified session-creation versions refuse.
+  The current executable's version is not checked; use 0.157.1 throughout a session.
 
 ### Changed
 - **On Claude Code and Grok, STOP fires once per do-plan invocation rather than once per
