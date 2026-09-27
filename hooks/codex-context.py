@@ -2,6 +2,7 @@
 """Codex-only do-plan handshake, parent hooks and durable per-run state."""
 import argparse
 import contextlib
+import errno
 import fcntl
 import hashlib
 import importlib.util
@@ -23,8 +24,12 @@ def module(name, path):
 
 
 ROOT = Path(__file__).resolve().parents[1]
-adapter = module("codex_transcript", ROOT / "hooks/codex-transcript.py")
-config = module("relay_config", ROOT / "skills/do-plan/read-config.py")
+try:
+    adapter = module("codex_transcript", ROOT / "hooks/codex-transcript.py")
+    config = module("relay_config", ROOT / "skills/do-plan/read-config.py")
+except (OSError, ImportError, SyntaxError) as error:
+    print(f"session-relay Codex: incomplete installation: {error}", file=sys.stderr)
+    sys.exit(1)
 
 
 def state_path(sid, cwd):
@@ -105,7 +110,7 @@ def hook(payload):
         # Identify a child before any writes, even if a future host omits agent_id.
         try:
             adapter.read_usage(payload.get("transcript_path"), sid, payload.get("model"), payload.get("turn_id"))
-        except adapter.ChildTranscript:
+        except (adapter.ChildTranscript, adapter.ForeignTranscript):
             return
         except adapter.Unavailable:
             pass
@@ -114,7 +119,6 @@ def hook(payload):
         # Only a parent PostToolUse or an explicit compact field changes this identity.
         if event == "PostToolUse" or payload.get("turn_id"):
             state["turn_id"] = payload.get("turn_id")
-        state["hook_seen"] = True
         message = ""
         if event == "PostCompact":
             state["invalidated_after"] = time.time()
@@ -197,6 +201,8 @@ def main():
                 save(path, state)
                 print(json.dumps({"phase": "finished", "run_id": args.value}))
                 return 0
+            if state["phase"] == "finished":
+                raise ValueError(f"run {state['run_id']} is finished; start a new run with probe")
             if state["phase"] not in {"ready", "active"}:
                 raise ValueError(state.get("error") or "parent hook receipt missing; check /hooks")
             try:
@@ -222,7 +228,7 @@ def main():
             return 0
     except (ValueError, OSError) as error:
         print(f"/session-relay:do-plan (Codex): {error}", file=sys.stderr)
-        if isinstance(error, PermissionError):
+        if getattr(error, "errno", None) in (errno.EACCES, errno.EPERM, errno.EROFS):
             print("Grant the session-relay state directory with Codex --add-dir, or use a writable XDG_STATE_HOME for both shell and hooks.", file=sys.stderr)
         return 1
 

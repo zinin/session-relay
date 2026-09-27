@@ -42,7 +42,7 @@ if [ -z "${CLAUDECODE:-}" ] && [ -z "${GROK_SESSION_ID:-}" ]; then
         echo "HOST=codex — follow codex.md next to this skill; do not execute legacy Steps 1–2"
         exit 0
     fi
-    echo "/session-relay:do-plan: do-plan здесь не поддерживается: нет сигнала о заполнении контекста (нужен Claude Code или Grok)." >&2
+    echo "/session-relay:do-plan: do-plan здесь не поддерживается: нет сигнала о заполнении контекста (нужен Claude Code или Grok). В Codex, даже без CODEX_SESSION_ID/CODEX_THREAD_ID, следуйте codex.md рядом с этим навыком." >&2
     exit 1
 fi
 SR_READ="${CLAUDE_PLUGIN_ROOT}/skills/do-plan/read-config.py"

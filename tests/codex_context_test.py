@@ -242,6 +242,13 @@ class CodexContext(unittest.TestCase):
     def test_finish_disarms(self):
         run = self.start(); self.cli("finish", run); self.write(160000)
         self.assertEqual(self.hook(), "")
+        self.assertIn("finished", self.cli("check", run, ok=False))
+
+    def test_finish_with_foreign_run_id_keeps_run_armed(self):
+        run = self.start()
+        self.cli("finish", "not-" + run, ok=False)
+        self.write(160000)
+        self.assertIn("STOP", self.hook())
 
     def test_child_identity_without_agent_field_does_not_poison_parent(self):
         run = self.start()
@@ -251,6 +258,16 @@ class CodexContext(unittest.TestCase):
         self.write(140000)
         self.assertEqual(self.hook(transcript_path=str(child)), "")
         self.assertFalse(self.cli("check", run)["pause_required"])
+
+    def test_foreign_transcript_with_parent_id_cannot_consume_stop(self):
+        run = self.start()
+        foreign = self.root / "foreign.jsonl"
+        self.write(160000, sid="other-id")
+        foreign.write_text(self.transcript.read_text())
+        self.write(160000)
+        self.assertTrue(self.cli("check", run)["pause_required"])
+        self.assertEqual(self.hook(transcript_path=str(foreign)), "")
+        self.assertIn("STOP", self.hook())
 
     def test_unknown_version_and_malformed_metadata_fail_clearly(self):
         run = self.cli("probe", "150k")["run_id"]
@@ -265,6 +282,18 @@ class CodexContext(unittest.TestCase):
         env = dict(self.env)
         env.pop("CODEX_SESSION_ID"); env.pop("CODEX_THREAD_ID")
         self.assertEqual(self.cli("probe", "150k", "--session-id", "parent-a", env=env)["session_id"], "parent-a")
+
+    def test_explicit_identity_conflicting_with_environment_fails(self):
+        self.assertIn("ID", self.cli("probe", "150k", "--session-id", "other-id", ok=False))
+
+    def test_unwritable_state_directory_suggests_add_dir(self):
+        if os.geteuid() == 0:
+            self.skipTest("root ignores directory permissions")
+        state = Path(self.env["XDG_STATE_HOME"])
+        state.mkdir()
+        state.chmod(0o500)
+        self.addCleanup(state.chmod, 0o700)
+        self.assertIn("--add-dir", self.cli("probe", "150k", ok=False))
 
     def test_installed_registration_handles_spaces_without_executable_bits(self):
         import shutil
@@ -283,6 +312,12 @@ class CodexContext(unittest.TestCase):
                            text=True, capture_output=True)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn(run, json.loads(p.stdout)["hookSpecificOutput"]["additionalContext"])
+
+    def test_manifests_share_name_and_version(self):
+        claude = json.loads((REPO / ".claude-plugin/plugin.json").read_text())
+        codex = json.loads((REPO / ".codex-plugin/plugin.json").read_text())
+        self.assertEqual(claude["name"], codex["name"])
+        self.assertEqual(claude["version"], codex["version"])
 
 
 if __name__ == "__main__":

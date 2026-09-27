@@ -17,6 +17,10 @@ class ChildTranscript(Unavailable):
     pass
 
 
+class ForeignTranscript(Unavailable):
+    pass
+
+
 def integer(value):
     return type(value) is int and value >= 0
 
@@ -57,7 +61,7 @@ def read_usage(path, session_id, model, turn_id, invalidated_after=0):
     if isinstance(meta.get("source"), dict) and "subagent" in meta["source"]:
         raise ChildTranscript("subagent transcript")
     if meta.get("id") != session_id:
-        raise Unavailable("transcript session_id mismatch")
+        raise ForeignTranscript("transcript session_id mismatch")
     if meta.get("cli_version") != "0.157.1":
         raise Unavailable("unverified Codex transcript version (tested: 0.157.1)")
 

@@ -2,7 +2,8 @@
 
 Run an implementation plan until the context fills up, pause at a clean checkpoint, and hand
 the work to a fresh session. An [Agent Skills](https://agentskills.io) plugin for Claude Code
-and Grok, with verified local Codex CLI support. Split out of claude-mesh 0.15.0.
+and Grok, with local Codex CLI 0.157.1 support (verified end-to-end through `codex exec` on
+Linux). Split out of claude-mesh 0.15.0.
 
 ## Skills
 
@@ -79,7 +80,11 @@ The adapter currently accepts **CLI 0.157.1** rollout JSONL. It reads
 last completed model request, including cached input once; lifetime
 `total_token_usage` and child usage are not the context counter. Hooks receive no
 `thread/tokenUsage/updated` subscription. The transcript format is unstable, so
-other CLI versions fail explicitly pending verification.
+other CLI versions fail explicitly pending verification. After a Codex update,
+do-plan refuses with `unverified Codex transcript version` until a session-relay
+release verifies the new format; use CLI 0.157.1 for do-plan meanwhile. The version
+comes from the rollout's `session_meta`, i.e. the CLI that created the session: run
+do-plan in a session started by 0.157.1, not one resumed across CLI versions.
 
 There is a request/flush delay: a first hook can have no count, and tool results
 not yet sent to the model are not counted. Startup retries across model responses;
