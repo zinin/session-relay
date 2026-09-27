@@ -126,6 +126,14 @@ class CodexContext(unittest.TestCase):
         self.assertIn(run, self.hook())
         self.cli("arm", run)
 
+    def test_finished_failed_startup_sends_no_late_receipt(self):
+        self.rows.pop(); self.flush()
+        run = self.cli("probe", "150k")["run_id"]
+        self.assertNotIn("ready", self.hook())
+        self.cli("finish", run)
+        self.rows.append(self.usage(140000)); self.flush()
+        self.assertEqual(self.hook(), "")
+
     def test_ephemeral_wrong_thread_and_subagent_transcripts(self):
         run = self.cli("probe", "150k")["run_id"]
         self.assertNotIn("ready", self.hook(transcript_path=None))

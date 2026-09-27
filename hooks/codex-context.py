@@ -129,7 +129,8 @@ def hook(payload):
                 state["phase"] = "ready"
                 message = (f"session-relay Codex ready run_id={state['run_id']} "
                            f"session_id={sid} used={usage['used']} window={usage['window']}. "
-                           "This is the parent hook receipt; arm only this run.")
+                           "This is the parent hook receipt; arm only this run, "
+                           "and only while starting do-plan; ignore it otherwise.")
             elif state["phase"] == "active" and not state.get("stop_fired"):
                 if usage["used"] >= state["threshold"]:
                     state["stop_fired"] = True

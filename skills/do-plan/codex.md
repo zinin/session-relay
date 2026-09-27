@@ -41,7 +41,8 @@ only the shell to a different state location.
    responses, not a shell sleep loop. Before the first completed model request there
    may be no usage. A failed check supplies the exact reason.
 
-   Without a matching receipt, do not arm or dispatch. Report the diagnostic and
+   Without a matching receipt, do not arm or dispatch. Run `finish RUN_ID` (see
+   Cleanup) so this run cannot announce itself later, then report the diagnostic and
    ask the user to inspect `/hooks`: plugin enabled, hook definitions trusted,
    `python3` present, installed script readable, and local transcript available.
    Installing a plugin does not trust its hooks. Do not bypass trust yourself.
@@ -105,7 +106,7 @@ its adjacent progress file; use the available task tracker too. Commit the progr
 with the checkpoint when commits are part of the plan. The continuation prompt
 must name that file; a new session resumes from it, not from old hook state.
 
-## Cleanup after a pause or completed plan
+## Cleanup after a pause, a completed plan or a failed startup
 
 ```bash
 python3 /absolute/loaded/plugin/hooks/codex-context.py finish RUN_ID
