@@ -168,6 +168,21 @@ class CodexContext(unittest.TestCase):
         self.hook()
         self.assertFalse(self.cli("check", run)["pause_required"])
 
+    def test_status_recovers_run_after_compaction_without_writing(self):
+        run = self.start()
+        self.write(160000)
+        self.hook("PreCompact"); self.hook("PostCompact")
+        files = list((Path(self.env["XDG_STATE_HOME"]) / "session-relay/codex").glob("*.json"))
+        self.assertEqual(len(files), 1)
+        before = files[0].read_bytes()
+        status = self.cli("status")
+        self.assertEqual(status["run_id"], run)
+        self.assertTrue(status["stop_fired"])
+        self.assertEqual(files[0].read_bytes(), before)
+        self.assertTrue(self.cli("check", status["run_id"])["pause_required"])
+        env = dict(self.env, CODEX_SESSION_ID="unused", CODEX_THREAD_ID="unused")
+        self.cli("status", ok=False, env=env)
+
     def test_stale_model_turn_and_unknown_data(self):
         run = self.start()
         old = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=10)).isoformat()

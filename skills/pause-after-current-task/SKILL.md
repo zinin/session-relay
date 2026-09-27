@@ -33,7 +33,8 @@ is the invocation. Use the host's available task tracker instead of inventing
 commits and the next unstarted task in the plan or its adjacent progress file.
 That file, referenced by the continuation prompt, is the source of progress in a
 fresh session. On Codex, finish the active run with the `finish RUN_ID` command in
-`do-plan/codex.md` after saving progress; retain the run ID through compaction.
+`do-plan/codex.md` after saving progress; retain the run ID through compaction, or
+recover it with `status` from `do-plan/codex.md`.
 
 ### State A — Plan loaded, nothing dispatched yet
 

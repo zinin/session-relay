@@ -167,7 +167,7 @@ def main():
             return 1
         return 0
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["probe", "arm", "check", "finish"])
+    parser.add_argument("command", choices=["probe", "arm", "check", "finish", "status"])
     parser.add_argument("value", nargs="?", default="")
     parser.add_argument("--session-id", help="exact current session ID when the host provides no shell ID")
     args = parser.parse_args()
@@ -194,6 +194,12 @@ def main():
                 print(json.dumps(state))
                 return 0
             state = load(path)
+            if args.command == "status":
+                print(json.dumps({"run_id": state["run_id"], "phase": state["phase"],
+                                  "threshold": state["threshold"],
+                                  "stop_fired": bool(state.get("stop_fired")),
+                                  "error": state.get("error", "")}))
+                return 0
             if not args.value or state.get("run_id") != args.value:
                 raise ValueError("run_id does not match this session's current run")
             if args.command == "finish":
