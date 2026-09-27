@@ -2,7 +2,7 @@
 
 All notable changes to session-relay will be documented here.
 
-## [Unreleased]
+## [0.16.0] - 2026-09-27
 
 ### Changed
 - **Split out of claude-mesh 0.15.0.** `do-plan`, `pause-after-current-task`, `transfer-session`,
