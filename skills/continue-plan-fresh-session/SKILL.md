@@ -21,6 +21,9 @@ Generate a prompt for continuing the current plan execution in a new, clean agen
 
 From current session:
 - Read the TodoWrite list (completed/pending tasks)
+- If TodoWrite is unavailable, read the host task tracker and the persisted plan
+  progress/SDD ledger. Include that progress file's path in DOCUMENTS below so a
+  fresh Codex session can skip reviewed tasks already completed.
 - Analyze session context to understand what was done
 - Form a clear list of completed and remaining tasks
 

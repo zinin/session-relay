@@ -15,21 +15,34 @@ When the threshold is crossed, stop at a clean checkpoint via `/session-relay:pa
 How you learn that the threshold was crossed depends on the host:
 
 - **Claude Code:** the `PostToolUse` hook `check-context-size.sh` injects a `STOP` reminder into the model context. That is the primary signal. Follow Step 6.
-- **Anywhere else** (Codex, a bare terminal): nothing reports the context size, so a run would never pause. Step 1 refuses to start there.
+- **Codex:** follow **Codex startup** below instead of Steps 1–2. A separate parent hook reads the last completed request's usage from the exact session transcript. Startup requires a fresh hook receipt; missing telemetry never means zero.
+- **Anywhere else** (a bare terminal): no supported context signal. Step 1 refuses to start there.
 - **Grok:** that hook is **not the primary** STOP channel. Grok ignores `PostToolUse` stdout, and the model does not receive the status-line `/session-info` / `/context` numbers. After each task checkpoint, read `contextTokensUsed` from the session `signals.json` (path echoed as `CONTEXT_SIGNALS=` in Step 1). If it is `>=` the STOP threshold, treat that as STOP and follow Step 6. Do not wait for a hook reminder.
 
-## Step 1 — Determine threshold
+## Codex startup — replaces Steps 1–2
+
+Use this path when running in Codex, even if its shell has no `CODEX_*` variables.
+Read [codex.md](codex.md) next to this file and follow its startup, checkpoint and
+cleanup commands. It resolves the same settings and threshold floor, verifies the
+parent hook and current usage, and writes a fresh isolated run. Only after startup
+succeeds continue at Step 3. Never set `CLAUDECODE` or `GROK_SESSION_ID` to get past
+the legacy host check. Never select a session file by modification time.
+
+## Step 1 — Determine threshold (Claude Code / Grok)
 
 ### Resolve the config-driven default
 
-When no argument is given, the STOP threshold is `stop_tokens` from `~/.config/session-relay/config.yaml` (`$XDG_CONFIG_HOME/session-relay/config.yaml` when that is set), read by `read-config.py` next to this file. Claude Code substitutes the plugin root into this file's text; Grok and Codex do not, hence the version-sorted globs as fallback — installed-plugins first, and only inside a Grok session:
+When no argument is given, the STOP threshold is `stop_tokens` from `~/.config/session-relay/config.yaml` (`$XDG_CONFIG_HOME/session-relay/config.yaml` when that is set), read by `read-config.py` next to this file. Claude Code substitutes the plugin root into this file's text; Grok does not, hence the version-sorted globs as fallback — installed-plugins first, and only inside a Grok session. Codex uses the loaded skill's own path as described above:
 
 ```bash
 # A STOP needs a signal: the PostToolUse hook on Claude Code (CLAUDECODE is set in its Bash
-# calls), signals.json on Grok (GROK_SESSION_ID). Anywhere else — Codex, for one — nothing tells
-# this session how full its context is, and a run that cannot pause must not start.
+# calls), signals.json on Grok (GROK_SESSION_ID). Codex has a separate verified path.
 if [ -z "${CLAUDECODE:-}" ] && [ -z "${GROK_SESSION_ID:-}" ]; then
-    echo "/session-relay:do-plan: do-plan здесь не поддерживается: нет сигнала о заполнении контекста (нужен Claude Code или Grok)." >&2
+    if [ -n "${CODEX_SESSION_ID:-}${CODEX_THREAD_ID:-}" ]; then
+        echo "HOST=codex — follow codex.md next to this skill; do not execute legacy Steps 1–2"
+        exit 0
+    fi
+    echo "/session-relay:do-plan: do-plan здесь не поддерживается: нет сигнала о заполнении контекста (нужен Claude Code или Grok). В Codex, даже без CODEX_SESSION_ID/CODEX_THREAD_ID, следуйте codex.md рядом с этим навыком." >&2
     exit 1
 fi
 SR_READ="${CLAUDE_PLUGIN_ROOT}/skills/do-plan/read-config.py"
@@ -181,6 +194,8 @@ SID="${CLAUDE_CODE_SESSION_ID:-${GROK_SESSION_ID:-}}"
 # Atomic write with jq (not printf): robust to a concurrent hook read seeing a
 # half-written file. Session is in the filename, so the body is just the threshold.
 CONFIG_PATH="$STATE_DIR/do-plan-config-${CWD_ENC}-${SID}.json"
+# A new invocation owns a new STOP, even when this session ran do-plan before.
+rm -f "$STATE_DIR/context-stop-${SID}.txt" "$STATE_DIR/context-milestone-${SID}.txt"
 CONFIG_TMP="$(mktemp "$STATE_DIR/.do-plan-config-${CWD_ENC}-${SID}.XXXXXX")" \
     || { echo "/session-relay:do-plan: mktemp failed for config" >&2; exit 1; }
 jq -nc --argjson thr <THRESHOLD> '{stop_threshold:$thr}' > "$CONFIG_TMP" \
@@ -213,7 +228,13 @@ No long preamble.
 
 ## Step 4 — Invoke the executor
 
-Use the `Skill` tool with `skill = "superpowers:subagent-driven-development"`. That skill drives the per-task loop.
+Use the `Skill` tool with `skill = "superpowers:subagent-driven-development"` when
+that tool exists. Otherwise (including Codex), locate that skill in the current
+session's skill catalog, read its actual `SKILL.md` through the available file or
+skill reader, and follow it. This is the invocation; do not invent a `Skill` call.
+If the skill or subagent tools are unavailable, stop with that concrete diagnostic.
+When the plan has persisted progress (Codex writes it at each checkpoint), read it
+first and resume at the first incomplete task.
 
 ## Step 5 — Execution rules (overrides on top of the skill)
 
@@ -221,10 +242,17 @@ These apply throughout execution and override any cost-cutting guidance the skil
 
 ### Model: dispatch tier
 
-- The dispatch model is `$DISPATCH_MODEL`, resolved in Step 1 from `dispatch_model` in the session-relay config, then (on Grok) dropped unless it is a live host slug. `echo "DISPATCH_MODEL=…"` in Step 1 is the value to use — already empty when the slug is not on this host.
+- **Codex:** `dispatch_model` is validated but ignored with a warning. Inherit the
+  parent model and effort: omit model/effort overrides in every spawn. This rule
+  overrides SDD's model-routing defaults. Use the actual Codex tool schema:
+  `spawn_agent` and the supplied follow-up/wait tools (names vary by interface).
+  Do not pass Grok's `spawn_subagent`, `subagent_type`, model slugs or unsupported
+  fields. Use `fork_turns: "none"` only if that field is exposed; include full task
+  instructions in the supported message/prompt field. Do not invent parameters.
+- **Claude Code / Grok:** the dispatch model is `$DISPATCH_MODEL`, resolved in Step 1 from `dispatch_model` in the session-relay config, then (on Grok) dropped unless it is a live host slug. `echo "DISPATCH_MODEL=…"` in Step 1 is the value to use — already empty when the slug is not on this host.
   - **Non-empty** → every `Agent` / `spawn_subagent` dispatch (implementer, spec reviewer, code quality reviewer, parallel work, any subagent) **must explicitly set `model: "<DISPATCH_MODEL>"`**.
   - **Empty** (no `dispatch_model` in the config, no config file, or the configured slug is not a host model) → **omit `model:`** so each subagent **inherits this session's model**. Never explicitly pass a model *cheaper* than the session to economize on a "simple" subtask.
-- spawn_subagent has no effort / `reasoning_effort` field. Do not invent one. Omitting `model:` is what inherits this session's reasoning effort (e.g. `xhigh` on `grok-4.6`) along with the model.
+- On Grok, spawn_subagent has no effort / `reasoning_effort` field. Do not invent one. Omitting `model:` is what inherits this session's reasoning effort (e.g. `xhigh` on `grok-4.6`) along with the model. This sentence does not describe Codex's tools.
 - The same dispatch-model rule applies to external reviewers (`superpowers:requesting-code-review` and friends) where a model parameter is accepted — set `model: "<DISPATCH_MODEL>"` when non-empty, otherwise omit it.
 - If a subagent type does not accept a model override, accept the default — but do not deliberately route work to cheaper agents.
 
@@ -239,7 +267,15 @@ These apply throughout execution and override any cost-cutting guidance the skil
 - Per `superpowers:subagent-driven-development`, every task includes a **spec compliance review** and a **code quality review**. Never skip either, never short-circuit the re-review loop after a fix.
 - This holds even if the task looks trivial.
 
-## Step 6 — React to STOP (hook on Claude Code, `signals.json` on Grok)
+## Step 6 — React to STOP
+
+### Codex — parent hook plus checkpoint check
+
+Follow the checkpoint section of [codex.md](codex.md) before **every** new task,
+including Task 1. The parent hook's STOP is delivered once per run; the durable
+`pause_required` result remains true after compaction even if the reminder leaves
+context. Missing/stale telemetry requires a clean pause if a fresh check cannot
+recover it. Neither a child event nor another session may acknowledge the run.
 
 ### Claude Code — hook reminders
 
@@ -269,7 +305,7 @@ ctx:<N>k STOP threshold=<T>k - invoke /session-relay:pause-after-current-task
 
 When you see this, follow **On STOP** below.
 
-The STOP signal fires exactly once per session. If it has already fired and you somehow missed it, check that the hook's STOP-marker file (`${XDG_STATE_HOME:-~/.local/state}/session-relay/context-stop-<session>.txt`) exists — but in normal flow, just trust the first reminder.
+The STOP signal fires once per invocation; Step 2 resets the markers for a new run. If it has already fired and you somehow missed it, check that the hook's STOP-marker file (`${XDG_STATE_HOME:-~/.local/state}/session-relay/context-stop-<session>.txt`) exists — but in normal flow, just trust the first reminder.
 
 ### Grok — poll `signals.json` (primary)
 
@@ -303,7 +339,7 @@ Do not treat auto-compact (default 85% of the Grok window, often 425k on a 500k 
 ### On STOP
 
 1. **Do not abort mid-task.** The current task must reach a clean checkpoint first.
-2. Invoke the `pause-after-current-task` skill via the `Skill` tool. That skill encodes the entire state machine (implementer DONE → spec review ✅ → code review ✅ → mark complete in TodoWrite → checkpoint report).
+2. Invoke `pause-after-current-task` using `Skill` when available, otherwise read and follow its `SKILL.md` as in Step 4. That skill encodes the entire state machine (implementer DONE → spec review ✅ → code review ✅ → mark complete in TodoWrite, or on hosts without TodoWrite such as Codex persist completion → checkpoint report).
 3. Do **not** dispatch the next task.
 4. Do **not** invoke `/session-relay:continue-plan-fresh-session` yourself — that is the user's manual action after they return.
 5. After `pause-after-current-task` emits its standard checkpoint report, yield to the user.
@@ -311,6 +347,8 @@ Do not treat auto-compact (default 85% of the Grok window, often 425k on a 500k 
 ## Step 7 — End of plan
 
 If the plan reaches completion before STOP fires, follow `superpowers:subagent-driven-development` normally — final full-implementation review, `superpowers:finishing-a-development-branch`, and so on — with two additions below.
+
+On Codex first run the cleanup command in `codex.md` to disarm the completed run.
 
 Offer the code review BEFORE `superpowers:finishing-a-development-branch`, and if the user
 takes it, hold finishing entirely — no push, no PR, and no local merge either (finishing

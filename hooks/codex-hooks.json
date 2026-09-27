@@ -1,0 +1,7 @@
+{
+  "hooks": {
+    "PostToolUse": [{"hooks": [{"type": "command", "command": "python3 \"${PLUGIN_ROOT}/hooks/codex-context.py\" hook"}]}],
+    "PreCompact": [{"hooks": [{"type": "command", "command": "python3 \"${PLUGIN_ROOT}/hooks/codex-context.py\" hook"}]}],
+    "PostCompact": [{"hooks": [{"type": "command", "command": "python3 \"${PLUGIN_ROOT}/hooks/codex-context.py\" hook"}]}]
+  }
+}

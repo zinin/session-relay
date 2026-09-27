@@ -18,7 +18,8 @@ This file is for work inside this repository. It is not a plugin component.
 ## While working in this repo
 
 - Agents never edit the user's `~/.config/session-relay/config.yaml`.
-- Do not bump `.claude-plugin/plugin.json` on a feature branch; a release is a separate
-  `chore(release): X.Y.Z` commit on master with an annotated tag `session-relay--vX.Y.Z`.
+- Do not bump `.claude-plugin/plugin.json` or `.codex-plugin/plugin.json` on a feature branch;
+  a release is a separate `chore(release): X.Y.Z` commit on master that bumps both to the same
+  version, with an annotated tag `session-relay--vX.Y.Z`.
 - Before a PR: `git rm -r docs/superpowers/` when it exists, and commit.
 - Tests: `for f in tests/test-*.sh; do bash "$f"; done`.
