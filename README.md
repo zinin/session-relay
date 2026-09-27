@@ -2,7 +2,7 @@
 
 Run an implementation plan until the context fills up, pause at a clean checkpoint, and hand
 the work to a fresh session. An [Agent Skills](https://agentskills.io) plugin for Claude Code
-and Grok, installable in Codex. Split out of claude-mesh 0.15.0.
+and Grok, with verified local Codex CLI support. Split out of claude-mesh 0.15.0.
 
 ## Skills
 
@@ -16,7 +16,8 @@ and Grok, installable in Codex. Split out of claude-mesh 0.15.0.
   at 85% of the window comes first), and a fresh session's first turn has no count at all. Once
   `signals.json` exists, do-plan also warns when the threshold is not below 85% of the model's
   context window.
-  Where neither signal exists — Codex, a bare terminal — do-plan refuses to start.
+  Codex uses a separate parent hook and a checkpoint check of the last completed
+  model request; see its setup and limits below. Unsupported hosts refuse to start.
 - **`/session-relay:pause-after-current-task`** — finish the current task in full (spec review,
   code review, fixes), then stop before the next one.
 - **`/session-relay:continue-plan-fresh-session`**, **`/session-relay:exec-plan-fresh-session`**,
@@ -24,8 +25,8 @@ and Grok, installable in Codex. Split out of claude-mesh 0.15.0.
   carries any work over, in a fresh session. The prompt goes to a file under `docs/`; the chat
   gets only its path.
 
-`do-plan` needs the [superpowers](https://github.com/obra/superpowers) plugin, `python3` (its
-config reader) and `jq` (its state file and the context hook).
+`do-plan` needs the [superpowers](https://github.com/obra/superpowers) plugin and `python3`.
+Claude Code and Grok also need `jq` for state and context hooks.
 
 ## Install
 
@@ -49,12 +50,58 @@ codex plugin marketplace add zinin/agent-plugins
 codex plugin add session-relay@zinin
 ```
 
-Codex gets the prompt generators and `pause-after-current-task`. `do-plan` refuses to start
-there: Codex tells a session nothing about how full its context is.
+Enable the plugin, then open **`/hooks`** in Codex and review/trust its hook definitions.
+Installation alone does not grant hook trust. Start a new session after installing
+or updating; changed hook definitions may need trust again. Python 3 and a readable
+local transcript are required. Hook commands invoke Python explicitly, so executable
+bits on packaged scripts are not required. Codex's separate manifest loads
+`hooks/codex-hooks.json`; Claude Code and Grok retain `hooks/hooks.json`.
 
-Smoke-tested in `codex exec` 0.157: the generators wrote their files in a trusted folder or with
-`-s workspace-write` (an untrusted folder gets a read-only sandbox); pause-after-current-task and
-do-plan's refusal worked as described.
+In `workspace-write`, allow the state directory for the model's shell too (hooks
+and shell must use the same `XDG_STATE_HOME`):
+
+```bash
+mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/session-relay"
+codex --add-dir "${XDG_STATE_HOME:-$HOME/.local/state}/session-relay"
+```
+
+An unwritable directory fails startup; do-plan does not report a working monitor.
+
+Invoke `$session-relay:do-plan 150k` (or the host's slash-command equivalent).
+Before dispatching, do-plan requires a fresh nonce returned by the **parent hook**
+and validates the counter and window. If the receipt is missing it reports a
+concrete diagnostic: inspect `/hooks`, plugin enablement, Python and transcript
+access. It does not declare automatic pause active on installation alone.
+
+The adapter currently accepts **CLI 0.157.1** rollout JSONL. It reads
+`event_msg/token_count.info.last_token_usage.total_tokens` for the exact hook
+`session_id`, verified against `session_meta.id`. This is input plus output of the
+last completed model request, including cached input once; lifetime
+`total_token_usage` and child usage are not the context counter. Hooks receive no
+`thread/tokenUsage/updated` subscription. The transcript format is unstable, so
+other CLI versions fail explicitly pending verification.
+
+There is a request/flush delay: a first hook can have no count, and tool results
+not yet sent to the model are not counted. Startup retries across model responses;
+each task boundary checks again before dispatch. Samples older than five minutes,
+from another turn/model, or invalidated by compaction are unavailable. After
+compaction, Codex's temporary estimate is rejected until measured usage arrives.
+An already crossed STOP survives compaction and fires once per run. A new run has
+a new nonce; two threads in one directory have independent state.
+
+Keep the threshold below 90% of the reported usable window (a conservative margin).
+The default 400000 can exceed a model's window: choose an explicit lower threshold
+or a larger window; do-plan never silently lowers it. A lower Codex auto-compact
+setting can still compact before STOP. Missing telemetry at a checkpoint requires
+a clean pause after bounded retries. This is a cooperative controller, not a hard
+token-budget interrupt; the current task and reviews can grow beyond the threshold.
+
+Ephemeral sessions, remote transcripts unavailable locally, missing session identity,
+untrusted/disabled hooks and unrecognized versions/formats are unsupported.
+`CODEX_SESSION_ID` / `CODEX_THREAD_ID` are observed shell hints, not a promised API;
+when absent an exact ID supplied by the current host context is required. No newest
+session-file lookup is used. For measured results and reproduction, see
+[the Codex validation report](docs/codex-validation.md).
 
 ## Configure
 
@@ -63,12 +110,17 @@ when that is set); `config.example.yaml` is a starting point:
 
 ```yaml
 stop_tokens: 400000    # STOP threshold in tokens, at least 150000
-dispatch_model: opus   # model for do-plan's subagents; leave it out to inherit the session model
+dispatch_model: opus   # Claude; checked on Grok; Codex warns and inherits its session model
 ```
 
 A mistake in the file stops do-plan with `<file>:<line>` instead of quietly using a default.
 The state — the per-session threshold do-plan writes and the hook's markers — lives in
-`~/.local/state/session-relay/` (`$XDG_STATE_HOME/session-relay`).
+`~/.local/state/session-relay/` (`$XDG_STATE_HOME/session-relay`). Codex has a separate
+`codex/` namespace and disarms it after a pause/completion. Reviewed task progress
+is saved in the plan or an adjacent progress file so a fresh session skips done tasks.
+Codex validates `dispatch_model` syntax but deliberately ignores the value, warns,
+and inherits the parent's model and reasoning effort through its actual subagent
+tool schema. Grok-specific models and fields are never sent to Codex tools.
 
 ### Moving from claude-mesh
 

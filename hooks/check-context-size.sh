@@ -163,7 +163,7 @@ fi
 # ---- Handle context shrinking (compaction): reset milestone state silently ----
 if [ "$CURRENT_MILESTONE" -lt "$LAST_MILESTONE" ]; then
     echo "$CURRENT_MILESTONE" > "$STATE_MILESTONE"
-    # Don't reset STOP — once fired in a session, it stays fired.
+    # Don't reset STOP on compaction; a new do-plan invocation resets it explicitly.
     exit 0
 fi
 
@@ -176,7 +176,7 @@ if [ "$CURRENT_MILESTONE" -gt "$LAST_MILESTONE" ]; then
     echo "$CURRENT_MILESTONE" > "$STATE_MILESTONE"
 fi
 
-# STOP signal — fires at most once per session.
+# STOP signal — fires once until do-plan Step 2 resets it for a new invocation.
 # Gated by START_K floor: per agreement, the hook emits NOTHING below 150k,
 # including STOP. /do-plan validates threshold >= START_K*1000 as defense in depth.
 if [ "$STOP_FIRED" = "0" ] \

@@ -8,8 +8,12 @@
 # (the context hook emits nothing below 150k). An argument — /session-relay:do-plan 300k —
 # overrides it for one run. Keep it below 85% of your model's context window (Grok
 # compacts there first); on Grok, do-plan warns when it is not.
+# Codex requires a threshold below 90% of its reported usable window. Its default
+# window may be smaller than 400000; pass e.g. 150k or configure a larger model window.
 stop_tokens: 400000
 
 # Model for do-plan's subagents. Leave it out to inherit the session model. On Grok the
 # value is used only when it is a live slug from `grok models`.
+# Codex validates this setting but ignores it with a warning and inherits the
+# session's model and reasoning effort; no cross-host model names are passed.
 # dispatch_model: opus

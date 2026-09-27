@@ -27,6 +27,14 @@ If none of the above applies, there is **no current task** (states A, E, or F be
 
 Identify your state in the per-task loop, then act.
 
+On hosts without a `Skill` tool (including Codex), reading and following this file
+is the invocation. Use the host's available task tracker instead of inventing
+`TodoWrite`. At the checkpoint also persist completed task IDs, review results,
+commits and the next unstarted task in the plan or its adjacent progress file.
+That file, referenced by the continuation prompt, is the source of progress in a
+fresh session. On Codex, finish the active run with the `finish RUN_ID` command in
+`do-plan/codex.md` after saving progress; retain the run ID through compaction.
+
 ### State A — Plan loaded, nothing dispatched yet
 
 There is no current task. **Stop immediately.** Do NOT dispatch Task 1.

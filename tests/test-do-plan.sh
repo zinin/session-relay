@@ -95,9 +95,12 @@ echo "== /do-plan: Step 1 behaviour =="
 STEP1="$(fence '### Resolve the config-driven default')"
 assert_ge "Step 1 fence extracted" "20" "$(printf '%s\n' "$STEP1" | grep -c .)"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
-OUT="$(cd "$T" && env -u CLAUDECODE -u GROK_SESSION_ID CLAUDE_PLUGIN_ROOT="$REPO" bash -c "$STEP1" 2>&1)"; RC=$?
+OUT="$(cd "$T" && env -u CLAUDECODE -u GROK_SESSION_ID -u CODEX_SESSION_ID -u CODEX_THREAD_ID CLAUDE_PLUGIN_ROOT="$REPO" bash -c "$STEP1" 2>&1)"; RC=$?
 assert_eq "no Claude Code, no Grok → refuses (rc 1)" "1" "$RC"
 assert_has "…with the no-signal message" "do-plan здесь не поддерживается" "$OUT"
+OUT="$(cd "$T" && env -u CLAUDECODE -u GROK_SESSION_ID CODEX_SESSION_ID=codex-parent CODEX_THREAD_ID=codex-parent CLAUDE_PLUGIN_ROOT="$REPO" bash -c "$STEP1" 2>&1)"; RC=$?
+assert_eq "Codex selects its dedicated bootstrap instead of refusing" "0" "$RC"
+assert_has "Codex route" "HOST=codex" "$OUT"
 mkdir -p "$T/xdg/session-relay"
 printf 'stop_tokens: 300000\ndispatch_model: opus\n' > "$T/xdg/session-relay/config.yaml"
 OUT="$(cd "$T" && env -u GROK_SESSION_ID CLAUDECODE=1 CLAUDE_PLUGIN_ROOT="$REPO" XDG_CONFIG_HOME="$T/xdg" bash -c "$STEP1" 2>&1)"; RC=$?
@@ -174,6 +177,11 @@ STDIN="$(jq -nc --arg t "$TRANSCRIPT" --arg c "$T/proj" '{transcript_path:$t,cwd
 HOUT="$(printf '%s' "$STDIN" | env -u CLAUDE_PLUGIN_DATA -u GROK_PLUGIN_DATA XDG_STATE_HOME="$T/st" bash "$HOOK" 2>/dev/null)"
 assert_has "the hook fires STOP from the file Step 2 wrote" "STOP threshold=400k" "$HOUT"
 assert_has "…and names the pause skill" "invoke /session-relay:pause-after-current-task" "$HOUT"
+# Re-running Step 2 in this same session must clear the previous one-time STOP.
+( cd "$T/proj" && env -u GROK_SESSION_ID XDG_STATE_HOME="$T/st" CLAUDE_CODE_SESSION_ID=sid-42 bash -c "$STEP2" ); RC=$?
+assert_eq "Step 2 restarts in the same session" "0" "$RC"
+HOUT="$(printf '%s' "$STDIN" | XDG_STATE_HOME="$T/st" bash "$HOOK" 2>/dev/null)"
+assert_has "a restarted run has its own STOP" "STOP threshold=400k" "$HOUT"
 
 echo "== hooks.json: Claude Code path unchanged =="
 assert_ge "still registers PostToolUse" "1" "$(grep -c '"PostToolUse"' "$HOOKS" || true)"
