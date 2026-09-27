@@ -233,7 +233,8 @@ that tool exists. Otherwise (including Codex), locate that skill in the current
 session's skill catalog, read its actual `SKILL.md` through the available file or
 skill reader, and follow it. This is the invocation; do not invent a `Skill` call.
 If the skill or subagent tools are unavailable, stop with that concrete diagnostic.
-Read persisted plan progress first and resume at the first incomplete task.
+When the plan has persisted progress (Codex writes it at each checkpoint), read it
+first and resume at the first incomplete task.
 
 ## Step 5 — Execution rules (overrides on top of the skill)
 
@@ -338,7 +339,7 @@ Do not treat auto-compact (default 85% of the Grok window, often 425k on a 500k 
 ### On STOP
 
 1. **Do not abort mid-task.** The current task must reach a clean checkpoint first.
-2. Invoke `pause-after-current-task` using `Skill` when available, otherwise read and follow its `SKILL.md` as in Step 4. That skill encodes the entire state machine (implementer DONE → spec review ✅ → code review ✅ → persist completion → checkpoint report).
+2. Invoke `pause-after-current-task` using `Skill` when available, otherwise read and follow its `SKILL.md` as in Step 4. That skill encodes the entire state machine (implementer DONE → spec review ✅ → code review ✅ → mark complete in TodoWrite, or on hosts without TodoWrite such as Codex persist completion → checkpoint report).
 3. Do **not** dispatch the next task.
 4. Do **not** invoke `/session-relay:continue-plan-fresh-session` yourself — that is the user's manual action after they return.
 5. After `pause-after-current-task` emits its standard checkpoint report, yield to the user.
