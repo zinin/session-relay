@@ -2,7 +2,7 @@
 
 All notable changes to session-relay will be documented here.
 
-## [Unreleased]
+## [0.17.0] - 2026-09-27
 
 ### Added
 - **do-plan runs in local Codex CLI 0.157.1.** A Codex-only manifest loads

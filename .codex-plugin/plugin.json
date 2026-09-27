@@ -1,6 +1,6 @@
 {
   "name": "session-relay",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "description": "Run plans to a clean context checkpoint and resume in a fresh session.",
   "skills": "./skills/",
   "hooks": "./hooks/codex-hooks.json"
