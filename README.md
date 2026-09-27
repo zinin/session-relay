@@ -100,8 +100,7 @@ Ephemeral sessions, remote transcripts unavailable locally, missing session iden
 untrusted/disabled hooks and unrecognized versions/formats are unsupported.
 `CODEX_SESSION_ID` / `CODEX_THREAD_ID` are observed shell hints, not a promised API;
 when absent an exact ID supplied by the current host context is required. No newest
-session-file lookup is used. For measured results and reproduction, see
-[the Codex validation report](docs/codex-validation.md).
+session-file lookup is used.
 
 ## Configure
 
