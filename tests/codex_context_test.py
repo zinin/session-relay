@@ -1,6 +1,7 @@
 """Behavioral tests for the Codex adapter; live CLI smoke is separate."""
 import concurrent.futures
 import datetime
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -296,6 +297,20 @@ class CodexContext(unittest.TestCase):
         self.assertTrue(self.cli("check", run)["pause_required"])
         self.assertEqual(self.hook(transcript_path=str(foreign)), "")
         self.assertIn("STOP", self.hook())
+
+    def test_identify_reads_only_the_first_record(self):
+        spec = importlib.util.spec_from_file_location("codex_transcript", REPO / "hooks/codex-transcript.py")
+        adapter = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(adapter)
+        self.write(140000, sid="child-id", source={"subagent": {"parent_thread_id": "parent-a"}})
+        with self.assertRaises(adapter.ChildTranscript):
+            adapter.identify(str(self.transcript), "parent-a")
+        self.write(140000, sid="other-id")
+        with self.assertRaises(adapter.ForeignTranscript):
+            adapter.identify(str(self.transcript), "parent-a")
+        self.write(140000)
+        self.transcript.write_text(json.dumps(self.rows[0]) + "\nnot json\n")
+        adapter.identify(str(self.transcript), "parent-a")
 
     def test_unknown_version_and_malformed_metadata_fail_clearly(self):
         run = self.cli("probe", "150k")["run_id"]

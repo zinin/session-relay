@@ -39,6 +39,39 @@ def timestamp(value):
         raise Unavailable("usage timestamp is missing or unrecognized") from None
 
 
+def check_identity(first, session_id):
+    if not isinstance(first, dict) or first.get("type") != "session_meta":
+        raise Unavailable("transcript has no session_meta identity")
+    meta = first.get("payload", {})
+    if not isinstance(meta, dict):
+        raise Unavailable("unrecognized transcript metadata")
+    if isinstance(meta.get("source"), dict) and "subagent" in meta["source"]:
+        raise ChildTranscript("subagent transcript")
+    if meta.get("id") != session_id:
+        raise ForeignTranscript("transcript session_id mismatch")
+    return meta
+
+
+def identify(path, session_id):
+    """Read only the first record to tell a child or foreign transcript from the parent's."""
+    if not path:
+        raise Unavailable("no transcript_path (ephemeral/remote mode is unsupported)")
+    try:
+        with Path(path).open(encoding="utf-8") as stream:
+            line = stream.readline()
+    except (OSError, UnicodeError) as error:
+        raise Unavailable(f"transcript unavailable: {error}") from None
+    if not line.endswith("\n"):  # empty, or the writer is midway through it
+        raise Unavailable("transcript has no session_meta identity")
+    try:
+        record = json.loads(line)
+    except ValueError:
+        raise Unavailable("unrecognized transcript JSONL") from None
+    if not isinstance(record, dict):
+        raise Unavailable("unrecognized transcript record")
+    return check_identity(record, session_id)
+
+
 def read_usage(path, session_id, model, turn_id, invalidated_after=0):
     if not path:
         raise Unavailable("no transcript_path (ephemeral/remote mode is unsupported)")
@@ -57,15 +90,7 @@ def read_usage(path, session_id, model, turn_id, invalidated_after=0):
                 rows.append(row)
     except (OSError, UnicodeError) as error:
         raise Unavailable(f"transcript unavailable: {error}") from None
-    if not rows or rows[0].get("type") != "session_meta":
-        raise Unavailable("transcript has no session_meta identity")
-    meta = rows[0].get("payload", {})
-    if not isinstance(meta, dict):
-        raise Unavailable("unrecognized transcript metadata")
-    if isinstance(meta.get("source"), dict) and "subagent" in meta["source"]:
-        raise ChildTranscript("subagent transcript")
-    if meta.get("id") != session_id:
-        raise ForeignTranscript("transcript session_id mismatch")
+    meta = check_identity(rows[0] if rows else None, session_id)
     if meta.get("cli_version") != "0.157.1":
         raise Unavailable("unverified Codex transcript version (tested: 0.157.1)")
 

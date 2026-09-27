@@ -109,7 +109,7 @@ def hook(payload):
             return
         # Identify a child before any writes, even if a future host omits agent_id.
         try:
-            adapter.read_usage(payload.get("transcript_path"), sid, payload.get("model"), payload.get("turn_id"))
+            adapter.identify(payload.get("transcript_path"), sid)
         except (adapter.ChildTranscript, adapter.ForeignTranscript):
             return
         except adapter.Unavailable:
