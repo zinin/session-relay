@@ -45,8 +45,8 @@ class CodexContext(unittest.TestCase):
     def flush(self):
         self.transcript.write_text("".join(json.dumps(r) + "\n" for r in self.rows))
 
-    def cli(self, *args, ok=True, env=None):
-        p = subprocess.run(["python3", str(HELPER), *args], cwd=self.root,
+    def cli(self, *args, ok=True, env=None, cwd=None):
+        p = subprocess.run(["python3", str(HELPER), *args], cwd=cwd or self.root,
                            env=env or self.env, text=True, capture_output=True)
         if ok:
             self.assertEqual(p.returncode, 0, p.stderr + p.stdout)
@@ -112,6 +112,14 @@ class CodexContext(unittest.TestCase):
         self.assertTrue(self.cli("check", a)["pause_required"])
         self.write(160000, sid="parent-b")
         self.assertFalse(self.cli("check", b, env=b_env)["pause_required"])
+
+    def test_helper_and_hook_find_the_run_from_another_directory(self):
+        run = self.start()
+        worktree = self.root / "worktree"
+        worktree.mkdir()
+        self.cli("check", run, cwd=worktree)
+        self.write(160000)
+        self.assertIn("STOP", self.hook(cwd=str(worktree)))
 
     def test_missing_untrusted_hook_requires_receipt(self):
         run = self.cli("probe", "150k")["run_id"]

@@ -58,8 +58,8 @@ only the shell to a different state location.
    `python3 /absolute/loaded/plugin/hooks/codex-context.py status` (read-only: it
    prints the current run's `run_id`, `phase`, `threshold` and `stop_fired`), then
    continue with `check RUN_ID`. Never run `probe` to recover: a new probe starts a
-   new run and discards the current run's STOP. Run all helper commands in the
-   original session cwd, including after worktree setup.
+   new run and discards the current run's STOP. Helper commands find the run by the
+   session ID, so they work from any directory of the session, including a worktree.
    If `pause_required` is true, invoke `pause-after-current-task` before Task 1.
    Otherwise continue with do-plan Step 3 and Step 4. Announce that the counter is
    the last completed request and can lag by a request; don't call it instantaneous.
@@ -113,7 +113,7 @@ python3 /absolute/loaded/plugin/hooks/codex-context.py finish RUN_ID
 ```
 
 Do this after persisting progress, before the final report. Codex state is under
-`${XDG_STATE_HOME:-~/.local/state}/session-relay/codex/`, keyed by exact cwd and
+`${XDG_STATE_HOME:-~/.local/state}/session-relay/codex/`, keyed by the exact
 session ID and locked during writes. A new `probe`, only for a new do-plan
 invocation, creates a new nonce and resets STOP only for that run. Two sessions in
 one cwd do not share state. Child hooks cannot write parent state. A checkpoint

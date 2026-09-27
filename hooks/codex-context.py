@@ -32,9 +32,9 @@ except (OSError, ImportError, SyntaxError) as error:
     sys.exit(1)
 
 
-def state_path(sid, cwd):
+def state_path(sid):
     base = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state")
-    digest = hashlib.sha256((cwd + "\0" + sid).encode()).hexdigest()
+    digest = hashlib.sha256(sid.encode()).hexdigest()
     return base / "session-relay/codex" / (digest + ".json")
 
 
@@ -97,10 +97,10 @@ def hook(payload):
     event = payload.get("hook_event_name")
     if event not in {"PostToolUse", "PreCompact", "PostCompact"} or payload.get("agent_id"):
         return
-    sid, cwd = payload.get("session_id"), payload.get("cwd")
-    if not isinstance(sid, str) or not isinstance(cwd, str) or not sid or not cwd:
+    sid = payload.get("session_id")
+    if not isinstance(sid, str) or not sid:
         return
-    path = state_path(sid, cwd)
+    path = state_path(sid)
     if not path.exists():
         return
     with locked(path):
@@ -176,7 +176,7 @@ def main():
     try:
         sid = session_id(args.session_id)
         cwd = os.getcwd()
-        path = state_path(sid, cwd)
+        path = state_path(sid)
         with locked(path):
             if args.command == "probe":
                 values = config.parse(config.default_path())  # validate even with an override
