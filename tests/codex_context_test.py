@@ -197,6 +197,19 @@ class CodexContext(unittest.TestCase):
         self.hook()
         self.assertTrue(self.cli("check", run)["pause_required"])
 
+    def test_transient_gaps_stay_silent_and_persistent_failure_reminds_once(self):
+        self.start()
+        old = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=10)).isoformat()
+        self.rows[-1]["timestamp"] = old; self.flush()
+        self.assertEqual(self.hook(), "")
+        self.write(140000)
+        self.assertEqual(self.hook(), "")
+        self.rows[-1]["timestamp"] = old; self.flush()
+        self.assertEqual(self.hook(), "")
+        self.rows[0]["payload"]["cli_version"] = "0.200.0"; self.flush()
+        self.assertIn("telemetry unavailable", self.hook())
+        self.assertEqual(self.hook(), "")
+
     def test_partial_line_null_info_and_cached_tokens(self):
         run = self.start()
         self.rows.append(self.record("event_msg", {"type": "token_count", "info": None})); self.flush()

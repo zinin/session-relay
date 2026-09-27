@@ -82,6 +82,9 @@ Proceed only when the command succeeds with `phase: active`, empty `error`, and
 completion, and do not dispatch the next task. If telemetry is unavailable, retry
 at most twice through separate model/tool calls for rollout buffering or compaction
 recovery, then pause cleanly with the diagnostic. An earlier STOP remains sticky.
+The hook reminds about unavailable telemetry only for persistent causes (version,
+identity, format, window); transient gaps — stale, no usage yet, a turn or model
+change, compaction — stay silent and surface through `check`.
 
 The source is `token_count.info.last_token_usage.total_tokens`: input plus output
 of the latest completed parent request. Cached input is already included. Lifetime

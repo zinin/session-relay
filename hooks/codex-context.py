@@ -137,7 +137,8 @@ def hook(payload):
         except adapter.Unavailable as error:
             reason = str(error)
             if (event == "PostToolUse" and state["phase"] == "active"
-                    and not state.get("stop_fired") and state.get("error") != reason):
+                    and not state.get("stop_fired") and state.get("error") != reason
+                    and not isinstance(error, adapter.Pending)):
                 message = (f"session-relay Codex telemetry unavailable: {reason}. "
                            "Finish the current task; check telemetry before any new dispatch. "
                            "If still unavailable, invoke pause-after-current-task.")

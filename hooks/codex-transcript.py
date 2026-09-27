@@ -21,6 +21,10 @@ class ForeignTranscript(Unavailable):
     pass
 
 
+class Pending(Unavailable):
+    """A transient gap that the next completed model request normally fills."""
+
+
 def integer(value):
     return type(value) is int and value >= 0
 
@@ -96,26 +100,26 @@ def read_usage(path, session_id, model, turn_id, invalidated_after=0):
             previous_measurement = measurement
             sample = (row, info)
     if current_model != model or not model:
-        raise Unavailable("model changed; waiting for matching model usage")
+        raise Pending("model changed; waiting for matching model usage")
     if current_turn != turn_id or not turn_id:
-        raise Unavailable("turn changed; waiting for current turn usage")
+        raise Pending("turn changed; waiting for current turn usage")
     if sample is None:
-        raise Unavailable("no usage yet; waiting for a completed model request")
+        raise Pending("no usage yet; waiting for a completed model request")
     row, info = sample
     if not isinstance(info, dict) or not isinstance(info.get("last_token_usage"), dict):
         raise Unavailable("unrecognized last_token_usage")
     usage = info["last_token_usage"]
     inputs, outputs, total = (usage.get(k) for k in ("input_tokens", "output_tokens", "total_tokens"))
     if not all(integer(v) for v in (inputs, outputs, total)) or inputs == 0 or total != inputs + outputs:
-        raise Unavailable("usage is an estimate or unrecognized; waiting for real model usage")
+        raise Pending("usage is an estimate or unrecognized; waiting for real model usage")
     window = info.get("model_context_window")
     if not integer(window) or window == 0:
         raise Unavailable("model context window unavailable")
     measured_at = timestamp(row.get("timestamp"))
     if measured_at <= invalidated_after:
-        raise Unavailable("compaction invalidated usage; waiting for a new model request")
+        raise Pending("compaction invalidated usage; waiting for a new model request")
     age = time.time() - measured_at
     if age > 300 or age < -30:
-        raise Unavailable("stale usage; waiting for a fresh model request")
+        raise Pending("stale usage; waiting for a fresh model request")
     return {"used": total, "window": window, "measured_at": measured_at,
             "model": model, "turn_id": turn_id}
