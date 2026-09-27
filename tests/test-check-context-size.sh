@@ -8,7 +8,7 @@
 # THIS session's own file exists. Concurrent /do-plan runs in one cwd never clash.
 set -u
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
-HOOK="$TESTS_DIR/../../../hooks/check-context-size.sh"
+HOOK="$TESTS_DIR/../hooks/check-context-size.sh"
 
 FAIL=0
 PASS=0
@@ -52,13 +52,13 @@ run_hook() {
     local cwd="/test/proj"          # encodes to -test-proj (matches the hook's sed)
     local cwd_enc="-test-proj"
     local tmp; tmp="$(mktemp -d)"
-    mkdir -p "$tmp/state"
+    mkdir -p "$tmp/session-relay"
     local transcript="$tmp/${session}.jsonl"
     jq -nc --argjson u "$usage" \
         '{type:"assistant",message:{usage:{input_tokens:$u,cache_creation_input_tokens:0,cache_read_input_tokens:0}}}' \
         > "$transcript"
     if [ "$config_owner" != "-" ]; then
-        local cfg="$tmp/state/do-plan-config-${cwd_enc}-${config_owner}.json"
+        local cfg="$tmp/session-relay/do-plan-config-${cwd_enc}-${config_owner}.json"
         if [ -n "$raw" ]; then
             printf '%s\n' "$raw" > "$cfg"
         else
@@ -68,7 +68,7 @@ run_hook() {
     local stdin; stdin="$(jq -nc --arg t "$transcript" --arg c "$cwd" --arg a "$agent_id" \
         '{transcript_path:$t,cwd:$c,hook_event_name:"PostToolUse",agent_id:$a}')"
     local out rc
-    out="$(printf '%s' "$stdin" | CLAUDE_PLUGIN_DATA="$tmp" bash "$HOOK" 2>/dev/null)"; rc=$?
+    out="$(printf '%s' "$stdin" | XDG_STATE_HOME="$tmp" bash "$HOOK" 2>/dev/null)"; rc=$?
     rm -rf "$tmp"
     # iter-1 ISSUE-5: surface a non-zero hook exit so assert_silent (empty-stdout)
     # cannot mistake a crash (set -e abort, no stdout) for intentional silence.
@@ -79,30 +79,30 @@ run_hook() {
 # run_hook_grok <usage_total> <session> <subagent_type> <config_owner|-> [stop_threshold] [data_via]
 #   Grok envelope: no transcript_path, camelCase sessionId/hookEventName, usage from
 #   $GROK_HOME/sessions/<encoded-cwd>/<session>/signals.json (contextTokensUsed).
-#   data_via: "claude" (default) sets CLAUDE_PLUGIN_DATA; "grok" sets only GROK_PLUGIN_DATA
-#   so the hook must honour the Grok alias when the Claude one is unset.
+#   data_via: "claude" (default) also exports CLAUDE_PLUGIN_DATA, "grok" GROK_PLUGIN_DATA — both
+#   pointing elsewhere: the hook must read $XDG_STATE_HOME/session-relay and nothing else.
 run_hook_grok() {
     local usage="$1" session="$2" subagent_type="$3" config_owner="$4" threshold="${5:-250000}" data_via="${6:-claude}"
     local cwd="/test/proj"
     local cwd_enc="-test-proj"
     local tmp; tmp="$(mktemp -d)"
-    mkdir -p "$tmp/state"
+    mkdir -p "$tmp/session-relay"
     mkdir -p "$tmp/grok/sessions/%2Ftest%2Fproj/${session}"
     jq -nc --argjson u "$usage" '{contextTokensUsed:$u}' \
         > "$tmp/grok/sessions/%2Ftest%2Fproj/${session}/signals.json"
     if [ "$config_owner" != "-" ]; then
         jq -nc --argjson thr "$threshold" '{stop_threshold:$thr}' \
-            > "$tmp/state/do-plan-config-${cwd_enc}-${config_owner}.json"
+            > "$tmp/session-relay/do-plan-config-${cwd_enc}-${config_owner}.json"
     fi
     local stdin; stdin="$(jq -nc --arg c "$cwd" --arg s "$session" --arg st "$subagent_type" \
         '{sessionId:$s,cwd:$c,hookEventName:"PostToolUse",subagentType:$st}')"
     local out rc env_args
-    env_args=(GROK_HOME="$tmp/grok" GROK_SESSION_ID="$session")
+    env_args=(GROK_HOME="$tmp/grok" GROK_SESSION_ID="$session" XDG_STATE_HOME="$tmp")
     if [ "$data_via" = grok ]; then
-        env_args+=(GROK_PLUGIN_DATA="$tmp")
+        env_args+=(GROK_PLUGIN_DATA="$tmp/elsewhere")
         out="$(printf '%s' "$stdin" | env -u CLAUDE_PLUGIN_DATA "${env_args[@]}" bash "$HOOK" 2>/dev/null)"; rc=$?
     else
-        env_args+=(CLAUDE_PLUGIN_DATA="$tmp")
+        env_args+=(CLAUDE_PLUGIN_DATA="$tmp/elsewhere")
         out="$(printf '%s' "$stdin" | env "${env_args[@]}" bash "$HOOK" 2>/dev/null)"; rc=$?
     fi
     rm -rf "$tmp"
@@ -137,17 +137,17 @@ run_hook_parent_task() {
     local usage="$1" session="$2"
     local cwd="/test/proj" cwd_enc="-test-proj"
     local tmp; tmp="$(mktemp -d)"
-    mkdir -p "$tmp/state"
+    mkdir -p "$tmp/session-relay"
     local transcript="$tmp/${session}.jsonl"
     jq -nc --argjson u "$usage" \
         '{type:"assistant",message:{usage:{input_tokens:$u,cache_creation_input_tokens:0,cache_read_input_tokens:0}}}' \
         > "$transcript"
     jq -nc --argjson thr 250000 '{stop_threshold:$thr}' \
-        > "$tmp/state/do-plan-config-${cwd_enc}-${session}.json"
+        > "$tmp/session-relay/do-plan-config-${cwd_enc}-${session}.json"
     local stdin; stdin="$(jq -nc --arg t "$transcript" --arg c "$cwd" \
         '{transcript_path:$t,cwd:$c,hook_event_name:"PostToolUse",tool_name:"Task",tool_input:{subagent_type:"general-purpose"},agent_id:""}')"
     local out rc
-    out="$(printf '%s' "$stdin" | CLAUDE_PLUGIN_DATA="$tmp" bash "$HOOK" 2>/dev/null)"; rc=$?
+    out="$(printf '%s' "$stdin" | XDG_STATE_HOME="$tmp" bash "$HOOK" 2>/dev/null)"; rc=$?
     rm -rf "$tmp"
     [ "$rc" -eq 0 ] || out="${out}[hook exited rc=${rc}]"
     printf '%s' "$out"
@@ -189,7 +189,7 @@ assert_silent "Grok: own config + 100k (below 150k floor) → silent" \
     "$(run_hook_grok 100000 sessG "" sessG)"
 
 GROK_DATA="$(run_hook_grok 200000 sessG "" sessG 250000 grok)"
-assert_contains "Grok: GROK_PLUGIN_DATA (no CLAUDE_PLUGIN_DATA) + 200k → ctx:200k" "ctx:200k" "$GROK_DATA"
+assert_contains "Grok: GROK_PLUGIN_DATA ignored, XDG state read + 200k → ctx:200k" "ctx:200k" "$GROK_DATA"
 
 assert_silent "Grok: subagentType set → silent (do not write STOP_FIRED in the child)" \
     "$(run_hook_grok 200000 sessG "general-purpose" sessG)"
@@ -199,16 +199,16 @@ run_hook_grok_dummy_transcript() {
     local usage="$1" session="$2"
     local cwd="/test/proj" cwd_enc="-test-proj"
     local tmp; tmp="$(mktemp -d)"
-    mkdir -p "$tmp/state"
+    mkdir -p "$tmp/session-relay"
     mkdir -p "$tmp/grok/sessions/%2Ftest%2Fproj/${session}"
     jq -nc --argjson u "$usage" '{contextTokensUsed:$u}' \
         > "$tmp/grok/sessions/%2Ftest%2Fproj/${session}/signals.json"
     jq -nc --argjson thr 250000 '{stop_threshold:$thr}' \
-        > "$tmp/state/do-plan-config-${cwd_enc}-${session}.json"
+        > "$tmp/session-relay/do-plan-config-${cwd_enc}-${session}.json"
     local stdin; stdin="$(jq -nc --arg c "$cwd" --arg s "$session" \
         '{transcript_path:"/no/such/transcript.jsonl",sessionId:$s,cwd:$c,hookEventName:"PostToolUse"}')"
     local out rc
-    out="$(printf '%s' "$stdin" | CLAUDE_PLUGIN_DATA="$tmp" GROK_HOME="$tmp/grok" GROK_SESSION_ID="$session" bash "$HOOK" 2>/dev/null)"; rc=$?
+    out="$(printf '%s' "$stdin" | XDG_STATE_HOME="$tmp" GROK_HOME="$tmp/grok" GROK_SESSION_ID="$session" bash "$HOOK" 2>/dev/null)"; rc=$?
     rm -rf "$tmp"
     [ "$rc" -eq 0 ] || out="${out}[hook exited rc=${rc}]"
     printf '%s' "$out"

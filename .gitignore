@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+
+# JetBrains IDEs (IntelliJ IDEA, PyCharm, GoLand, etc.)
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# VS Code
+.vscode/
+
+# macOS / editor cruft
+.DS_Store
+*.swp
+*~

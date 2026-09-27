@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
-SCRIPT="$TESTS_DIR/../list-host-models.sh"
+SCRIPT="$TESTS_DIR/../skills/do-plan/list-host-models.sh"
 FIXTURE="$TESTS_DIR/fixtures/grok-models-2026-08-31.txt"
 FAIL=0
 PASS=0

@@ -1,0 +1,15 @@
+# session-relay config — copy to ~/.config/session-relay/config.yaml
+# ($XDG_CONFIG_HOME/session-relay/config.yaml when XDG_CONFIG_HOME is set).
+# Every key is optional, and a missing file means the defaults shown here.
+# Plain `key: value` lines only: no nesting, no lists. A mistake stops do-plan with
+# <file>:<line> rather than falling back to a default.
+
+# STOP threshold for /session-relay:do-plan, in tokens: a whole number, at least 150000
+# (the context hook emits nothing below 150k). An argument — /session-relay:do-plan 300k —
+# overrides it for one run. Keep it below 85% of your model's context window (Grok
+# compacts there first); on Grok, do-plan warns when it is not.
+stop_tokens: 400000
+
+# Model for do-plan's subagents. Leave it out to inherit the session model. On Grok the
+# value is used only when it is a live slug from `grok models`.
+# dispatch_model: opus

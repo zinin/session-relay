@@ -1,13 +1,13 @@
 ---
 name: exec-plan-fresh-session
-description: Generate a prompt for executing plan in a fresh Claude Code session
+description: Generate a prompt for executing plan in a fresh agent session
 ---
 
 # Fresh Session Execution Prompt Generator
 
 ## Task
 
-Generate a complete prompt for executing the current plan in a new, clean Claude Code session.
+Generate a complete prompt for executing the current plan in a new, clean agent session.
 
 ## Why Fresh Session
 
@@ -97,5 +97,5 @@ Do NOT silently work around plan issues or make significant deviations without u
    Prompt saved: execution prompt for <feature name>
      relative: docs/superpowers/plans/YYYY-MM-DD-<topic>-execution-prompt.md
      absolute: <realpath of that file>
-   Open a fresh Claude Code session and hand it this file.
+   Open a fresh agent session and hand it this file.
    ```
